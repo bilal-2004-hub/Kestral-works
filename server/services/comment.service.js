@@ -1,0 +1,140 @@
+const firestoreService = require('./firestore.service');
+const Comment = require('../models/Comment');
+const Project = require('../models/Project');
+const User = require('../models/User');
+const ApiError = require('../utils/ApiError');
+const { isStaff } = require('../middleware/auth');
+const { assertProjectAccess } = require('./task.service');
+const { notify, notifyMany } = require('./notification.service');
+
+async function populateComment(c) {
+  if (!c) return null;
+  const item = { ...c };
+  if (item.author && typeof item.author === 'string') {
+    const u = await firestoreService.getById('users', item.author);
+    item.author = u
+      ? { _id: u._id, id: u._id, name: u.name, role: u.role, avatar: u.avatar, company: u.company }
+      : { _id: item.author, id: item.author, name: 'Author' };
+  }
+  if (Array.isArray(item.attachments)) {
+    item.attachments = await Promise.all(
+      item.attachments.map(async (f) => (typeof f === 'string' ? firestoreService.getById('files', f) : f))
+    ).then((l) => l.filter(Boolean));
+  } else {
+    item.attachments = [];
+  }
+  return item;
+}
+
+async function list(user, projectId) {
+  await assertProjectAccess(user, projectId);
+
+  if (firestoreService.db) {
+    const rawComments = await firestoreService.find('comments', (ref) =>
+      ref.where('project', '==', projectId)
+    );
+    rawComments.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    return Promise.all(rawComments.map(populateComment));
+  }
+
+  return Comment.find({ project: projectId })
+    .populate('author', 'name role avatar company')
+    .populate('attachments', 'originalName url mimeType size')
+    .sort({ createdAt: 1 })
+    .lean();
+}
+
+async function create(user, payload) {
+  const project = await assertProjectAccess(user, payload.project);
+  const userId = user._id || user.uid;
+
+  const commentData = {
+    ...payload,
+    author: userId,
+    isResolved: false,
+  };
+
+  let comment;
+  if (firestoreService.db) {
+    comment = await firestoreService.create('comments', commentData);
+    comment = await populateComment(comment);
+  } else {
+    const doc = await Comment.create({ ...payload, author: user._id });
+    comment = doc.toJSON();
+  }
+
+  const clientId = typeof project.client === 'object' ? project.client._id : project.client;
+
+  // Notify the recipient
+  if (isStaff(user)) {
+    if (clientId) {
+      await notify({
+        user: clientId,
+        type: 'comment_new',
+        title: `New message on ${project.name}`,
+        body: comment.message.slice(0, 140),
+        link: `/portal/projects/${project._id}`,
+      }).catch(() => {});
+    }
+  } else {
+    let staffIds = [];
+    if (firestoreService.db) {
+      const staffDocs = await firestoreService.find('users', (ref) => ref.where('role', 'in', ['admin', 'manager']));
+      staffIds = staffDocs.map((s) => s._id);
+    } else {
+      const staff = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true }).select('_id').lean();
+      staffIds = staff.map((s) => s._id);
+    }
+
+    await notifyMany(staffIds, {
+      type: 'comment_new',
+      title: `${user.name} commented on ${project.name}`,
+      body: comment.message.slice(0, 140),
+      link: `/admin/projects/${project._id}`,
+    }).catch(() => {});
+  }
+
+  return comment;
+}
+
+async function resolve(user, id, isResolved) {
+  let comment;
+  if (firestoreService.db) {
+    comment = await firestoreService.update('comments', id, { isResolved });
+  } else {
+    const doc = await Comment.findById(id);
+    if (!doc) throw ApiError.notFound('Comment not found');
+    doc.isResolved = isResolved;
+    await doc.save();
+    comment = doc.toJSON();
+  }
+
+  if (!comment) throw ApiError.notFound('Comment not found');
+  return comment;
+}
+
+async function remove(user, id) {
+  let comment = await firestoreService.getById('comments', id);
+  if (!comment) {
+    const doc = await Comment.findById(id);
+    if (!doc) throw ApiError.notFound('Comment not found');
+    comment = doc.toJSON();
+  }
+
+  const authorId = typeof comment.author === 'object' ? comment.author._id : comment.author;
+  const userId = user._id || user.uid;
+
+  if (!isStaff(user) && authorId !== userId) {
+    throw ApiError.forbidden();
+  }
+
+  if (firestoreService.db) {
+    await firestoreService.remove('comments', id);
+  } else {
+    await Comment.findByIdAndDelete(id);
+  }
+
+  return { id };
+}
+
+module.exports = { list, create, resolve, remove };

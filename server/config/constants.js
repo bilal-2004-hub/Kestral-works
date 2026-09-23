@@ -1,0 +1,20 @@
+module.exports = {
+  ROLES: { ADMIN: 'admin', MANAGER: 'manager', CLIENT: 'client' },
+  PROJECT_STATUS: ['planning', 'in_progress', 'client_review', 'revision', 'completed', 'on_hold'],
+  TASK_STATUS: ['pending', 'in_progress', 'review', 'revision', 'completed'],
+  TASK_PRIORITY: ['low', 'medium', 'high', 'urgent'],
+  MILESTONE_STATUS: ['pending', 'in_progress', 'completed'],
+  PROGRESS_MODE: ['task_based', 'manual'],
+  REVIEW_STATUS: ['pending', 'approved', 'rejected', 'hidden'],
+  FEEDBACK_STATUS: ['open', 'in_review', 'resolved'],
+  SERVICES: [
+    'Web Development',
+    'Mobile App Development',
+    'UI/UX Design',
+    'Software Development',
+    'Digital Marketing',
+    'SEO',
+    'E-commerce Development',
+    'Custom Software Solutions',
+  ],
+};

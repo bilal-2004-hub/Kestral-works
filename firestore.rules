@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.role == 'manager' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'manager']
+      );
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // USERS collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaff() || isOwner(userId);
+      allow update: if isStaff() || (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])));
+      allow delete: if isAdmin();
+    }
+
+    // PROJECTS collection
+    match /projects/{projectId} {
+      allow read: if isStaff() || (isAuthenticated() && (resource.data.client == request.auth.uid || resource.data.clientId == request.auth.uid)) || resource.data.isPublic == true;
+      allow create, update, delete: if isStaff();
+    }
+
+    // TASKS collection
+    match /tasks/{taskId} {
+      allow read: if isStaff() || (isAuthenticated() && resource.data.visibleToClient == true);
+      allow create, update, delete: if isStaff();
+    }
+
+    // FEEDBACK collection
+    match /feedback/{feedbackId} {
+      allow read: if isStaff() || (isAuthenticated() && (resource.data.client == request.auth.uid || resource.data.clientId == request.auth.uid));
+      allow create: if isAuthenticated();
+      allow update: if isStaff() || (isAuthenticated() && (resource.data.client == request.auth.uid || resource.data.clientId == request.auth.uid));
+      allow delete: if isAdmin();
+    }
+
+    // COMMENTS collection
+    match /comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isStaff() || (isAuthenticated() && resource.data.author == request.auth.uid);
+    }
+
+    // REVIEWS collection
+    match /reviews/{reviewId} {
+      allow read: if resource.data.status == 'approved' || isStaff() || (isAuthenticated() && resource.data.client == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isStaff();
+    }
+
+    // NOTIFICATIONS collection
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isAuthenticated() && (resource.data.user == request.auth.uid || resource.data.userId == request.auth.uid || isStaff());
+      allow create: if isStaff();
+    }
+
+    // PROGRESS HISTORY collection
+    match /progressHistory/{historyId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    // ACTIVITIES collection
+    match /activities/{activityId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    // CONTACT MESSAGES collection
+    match /contactMessages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isStaff();
+    }
+
+    // FILES metadata collection
+    match /files/{fileId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+  }
+}

@@ -21,6 +21,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.24.0",
     "recharts": "^2.12.7",
+    "serve": "^14.2.6",
     "socket.io-client": "^4.8.3",
     "swiper": "^14.2.0"
   },

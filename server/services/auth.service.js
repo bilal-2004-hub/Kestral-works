@@ -1,8 +1,8 @@
+const bcrypt = require('bcryptjs');
 const firestoreService = require('./firestore.service');
 const { auth, isConfigured } = require('../config/firebaseAdmin');
-const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
-const { clientUrl } = require('../config/env');
+const { clientUrl, bcryptRounds } = require('../config/env');
 const { signAccessToken, signRefreshToken, verifyRefreshToken, createResetToken, hashResetToken } = require('../utils/token');
 const { sendMail, passwordResetEmail } = require('./mail.service');
 const logger = require('../utils/logger');
@@ -15,11 +15,8 @@ const issueTokens = (user) => ({
 async function register({ name, email, password, company, phone }) {
   const normalizedEmail = email.toLowerCase().trim();
 
-  // Check Firestore first
-  let existing = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
-  if (!existing && !isConfigured) {
-    existing = await User.findOne({ email: normalizedEmail }).catch(() => null);
-  }
+  // Check Firestore for existing user
+  const existing = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
   if (existing) throw ApiError.conflict('An account with that email already exists');
 
   let uid = null;
@@ -38,49 +35,40 @@ async function register({ name, email, password, company, phone }) {
       if (fbErr.code === 'auth/email-already-exists') {
         throw ApiError.conflict('An account with that email already exists in Firebase');
       }
-      logger.warn(`Firebase Auth create user failed, proceeding with Firestore/fallback: ${fbErr.message}`);
+      logger.warn(`Firebase Auth create user failed, proceeding with Firestore: ${fbErr.message}`);
     }
   }
 
-  // 2. Save user profile in Firestore
+  // Generate UID if Firebase Auth was not available
+  if (!uid) uid = 'usr_' + Date.now();
+
+  // Hash password for bcrypt-based JWT login fallback
+  const passwordHash = await bcrypt.hash(password, bcryptRounds);
+
+  // 2. Save user profile in Firestore (including passwordHash for JWT login)
   const userData = {
+    uid,
     name,
     email: normalizedEmail,
     role: 'client',
     company: company || '',
     phone: phone || '',
     isActive: true,
+    passwordHash,
   };
 
-  let user;
-  if (isConfigured && firestoreService.db) {
-    if (!uid) uid = 'usr_' + Date.now();
-    userData.uid = uid;
-    user = await firestoreService.set('users', uid, userData);
-  } else {
-    // Legacy Mongoose fallback
-    const mongoUser = await User.create({ name, email: normalizedEmail, password, company, phone, role: 'client' });
-    user = mongoUser.toJSON();
-  }
+  const user = await firestoreService.set('users', uid, userData);
 
-  return { user, ...issueTokens(user) };
+  // Return user without exposing passwordHash
+  const { passwordHash: _ph, ...safeUser } = user;
+  return { user: safeUser, ...issueTokens(safeUser) };
 }
 
 async function login({ email, password }) {
   const normalizedEmail = email.toLowerCase().trim();
 
-  // 1. Try Firestore user lookup
-  let user = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
-
-  // 2. Fallback to MongoDB if not in Firestore
-  if (!user) {
-    try {
-      const mongoUser = await User.findOne({ email: normalizedEmail }).select('+password');
-      if (mongoUser && (await mongoUser.comparePassword(password))) {
-        user = mongoUser.toJSON();
-      }
-    } catch {}
-  }
+  // Fetch user from Firestore
+  const user = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
 
   if (!user) {
     throw ApiError.unauthorized('Email or password is incorrect');
@@ -88,12 +76,24 @@ async function login({ email, password }) {
 
   if (user.isActive === false) throw ApiError.forbidden('This account has been deactivated');
 
-  // Update last login
-  if (firestoreService.db && user._id) {
-    await firestoreService.update('users', user._id, { lastLoginAt: new Date() }).catch(() => {});
+  // Verify password against stored hash
+  if (!user.passwordHash) {
+    // User was created via Firebase Auth token flow — password not stored in Firestore.
+    // Direct email/password login requires a passwordHash to be set.
+    throw ApiError.unauthorized('Please sign in with Firebase Authentication');
   }
 
-  return { user, ...issueTokens(user) };
+  const isValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isValid) {
+    throw ApiError.unauthorized('Email or password is incorrect');
+  }
+
+  // Update last login timestamp
+  await firestoreService.update('users', user._id, { lastLoginAt: new Date() }).catch(() => {});
+
+  // Return user without exposing passwordHash
+  const { passwordHash: _ph, ...safeUser } = user;
+  return { user: safeUser, ...issueTokens(safeUser) };
 }
 
 async function refresh(refreshToken) {
@@ -105,28 +105,25 @@ async function refresh(refreshToken) {
     throw ApiError.unauthorized('Your session expired. Sign in again.');
   }
 
-  let user = await firestoreService.getById('users', payload.sub);
-  if (!user) {
-    try {
-      user = await User.findById(payload.sub).lean();
-    } catch {}
-  }
+  const user = await firestoreService.getById('users', payload.sub);
 
   if (!user || user.isActive === false) throw ApiError.unauthorized('This account is no longer active');
-  return { user, ...issueTokens(user) };
+
+  const { passwordHash: _ph, ...safeUser } = user;
+  return { user: safeUser, ...issueTokens(safeUser) };
 }
 
 async function forgotPassword(email) {
   const normalizedEmail = email.toLowerCase().trim();
   const user = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
-  
-  if (isConfigured && auth) {
-    try {
-      // Firebase Auth sendPasswordResetEmail handled on client side
-    } catch {}
-  }
 
   if (!user || user.isActive === false) return { sent: true };
+
+  if (isConfigured && auth && user.uid) {
+    try {
+      // Firebase Auth password reset link — handled client-side if using Firebase Auth
+    } catch {}
+  }
 
   const { raw, hash } = createResetToken();
   await firestoreService.update('users', user._id, {
@@ -141,10 +138,11 @@ async function forgotPassword(email) {
 
 async function resetPassword({ token, email, password }) {
   const normalizedEmail = email.toLowerCase().trim();
-  let user = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
+  const user = await firestoreService.findOne('users', (ref) => ref.where('email', '==', normalizedEmail));
 
   if (!user) throw ApiError.badRequest('That reset link is invalid or has expired');
 
+  // Update password in Firebase Auth if available
   if (isConfigured && auth && user.uid) {
     try {
       await auth.updateUser(user.uid, { password });
@@ -153,25 +151,30 @@ async function resetPassword({ token, email, password }) {
     }
   }
 
+  // Update passwordHash in Firestore for JWT login
+  const passwordHash = await bcrypt.hash(password, bcryptRounds);
   await firestoreService.update('users', user._id, {
+    passwordHash,
+    resetTokenHash: null,
+    resetTokenExpires: null,
     updatedAt: new Date(),
   });
 
-  return { user, ...issueTokens(user) };
+  const { passwordHash: _ph, ...safeUser } = user;
+  return { user: safeUser, ...issueTokens(safeUser) };
 }
 
 async function changePassword(userId, { currentPassword, newPassword }) {
-  let user = await firestoreService.getById('users', userId);
-  if (!user) {
-    const mongoUser = await User.findById(userId).select('+password');
-    if (!mongoUser || !(await mongoUser.comparePassword(currentPassword))) {
-      throw ApiError.badRequest('Your current password is not correct');
-    }
-    mongoUser.password = newPassword;
-    await mongoUser.save();
-    return { user: mongoUser.toJSON(), ...issueTokens(mongoUser) };
+  const user = await firestoreService.getById('users', userId);
+  if (!user) throw ApiError.notFound('User not found');
+
+  // Verify current password if hash exists (JWT login path)
+  if (user.passwordHash) {
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) throw ApiError.badRequest('Your current password is not correct');
   }
 
+  // Update in Firebase Auth if available
   if (isConfigured && auth && user.uid) {
     try {
       await auth.updateUser(user.uid, { password: newPassword });
@@ -180,7 +183,12 @@ async function changePassword(userId, { currentPassword, newPassword }) {
     }
   }
 
-  return { user, ...issueTokens(user) };
+  // Update passwordHash in Firestore
+  const passwordHash = await bcrypt.hash(newPassword, bcryptRounds);
+  const updatedUser = await firestoreService.update('users', userId, { passwordHash });
+
+  const { passwordHash: _ph, ...safeUser } = updatedUser;
+  return { user: safeUser, ...issueTokens(safeUser) };
 }
 
 async function recordClientLogin(user, { ipAddress = '', userAgent = '', portal = 'client_portal', loginMethod = 'email_password' } = {}) {
@@ -201,15 +209,9 @@ async function recordClientLogin(user, { ipAddress = '', userAgent = '', portal 
   };
 
   try {
-    if (firestoreService.db) {
-      const created = await firestoreService.create('clientLogins', loginEntry);
-      logger.info(`Logged client login in Firestore (clientLogins) for: ${user.email}`);
-      return created;
-    } else {
-      const ClientLogin = require('../models/ClientLogin');
-      const doc = await ClientLogin.create(loginEntry);
-      return doc.toJSON();
-    }
+    const created = await firestoreService.create('clientLogins', loginEntry);
+    logger.info(`Logged client login in Firestore (clientLogins) for: ${user.email}`);
+    return created;
   } catch (err) {
     logger.warn(`Failed to record client login in Firestore: ${err.message}`);
     return loginEntry;
@@ -220,29 +222,17 @@ async function listClientLogins(filters = {}) {
   const { getPagination, buildMeta } = require('../utils/pagination');
   const { page, limit, skip } = getPagination(filters);
 
-  if (firestoreService.db) {
-    const rawItems = await firestoreService.find('clientLogins', (ref) => {
-      let q = ref;
-      if (filters.email) q = q.where('email', '==', filters.email.toLowerCase().trim());
-      if (filters.userId) q = q.where('userId', '==', filters.userId);
-      return q;
-    });
+  const rawItems = await firestoreService.find('clientLogins', (ref) => {
+    let q = ref;
+    if (filters.email) q = q.where('email', '==', filters.email.toLowerCase().trim());
+    if (filters.userId) q = q.where('userId', '==', filters.userId);
+    return q;
+  });
 
-    rawItems.sort((a, b) => new Date(b.loginAt || b.createdAt || 0) - new Date(a.loginAt || a.createdAt || 0));
-    const total = rawItems.length;
-    const paginated = rawItems.slice(skip, skip + limit);
-    return { items: paginated, meta: buildMeta({ page, limit, total }) };
-  } else {
-    const ClientLogin = require('../models/ClientLogin');
-    const query = {};
-    if (filters.email) query.email = filters.email.toLowerCase().trim();
-    if (filters.userId) query.userId = filters.userId;
-    const [items, total] = await Promise.all([
-      ClientLogin.find(query).sort({ loginAt: -1 }).skip(skip).limit(limit).lean(),
-      ClientLogin.countDocuments(query),
-    ]);
-    return { items, meta: buildMeta({ page, limit, total }) };
-  }
+  rawItems.sort((a, b) => new Date(b.loginAt || b.createdAt || 0) - new Date(a.loginAt || a.createdAt || 0));
+  const total = rawItems.length;
+  const paginated = rawItems.slice(skip, skip + limit);
+  return { items: paginated, meta: buildMeta({ page, limit, total }) };
 }
 
 module.exports = {

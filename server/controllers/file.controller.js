@@ -5,7 +5,6 @@ const { created, success } = require('../utils/apiResponse');
 const ApiError = require('../utils/ApiError');
 const firestoreService = require('../services/firestore.service');
 const { storage, isConfigured } = require('../config/firebaseAdmin');
-const File = require('../models/File');
 const { isStaff } = require('../middleware/auth');
 const { assertProjectAccess } = require('../services/task.service');
 const { UPLOAD_DIR } = require('../middleware/upload');
@@ -68,25 +67,16 @@ exports.upload = asyncHandler(async (req, res) => {
       project: req.body.project || null,
     };
 
-    if (firestoreService.db) {
-      const doc = await firestoreService.create('files', fileMeta);
-      docs.push(doc);
-    } else {
-      const doc = await File.create(fileMeta);
-      docs.push(doc.toJSON());
-    }
+    const doc = await firestoreService.create('files', fileMeta);
+    docs.push(doc);
   }
 
   created(res, { data: docs, message: 'Files uploaded' });
 });
 
 exports.remove = asyncHandler(async (req, res) => {
-  let file = await firestoreService.getById('files', req.params.id);
-  if (!file) {
-    const doc = await File.findById(req.params.id);
-    if (!doc) throw ApiError.notFound('File not found');
-    file = doc.toJSON();
-  }
+  const file = await firestoreService.getById('files', req.params.id);
+  if (!file) throw ApiError.notFound('File not found');
 
   const userId = req.user._id || req.user.uid;
   const uploadedBy = typeof file.uploadedBy === 'object' ? file.uploadedBy._id : file.uploadedBy;
@@ -110,11 +100,7 @@ exports.remove = asyncHandler(async (req, res) => {
     await fs.unlink(path.join(UPLOAD_DIR, file.storedName)).catch(() => {});
   }
 
-  if (firestoreService.db) {
-    await firestoreService.remove('files', req.params.id);
-  } else {
-    await File.findByIdAndDelete(req.params.id);
-  }
+  await firestoreService.remove('files', req.params.id);
 
   success(res, { message: 'File deleted' });
 });

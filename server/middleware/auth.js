@@ -3,11 +3,10 @@ const firestoreService = require('../services/firestore.service');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { verifyAccessToken } = require('../utils/token');
-const logger = require('../utils/logger');
 
 /**
  * Express middleware that authenticates the user via Firebase ID Token
- * (with backward-compatible fallback to custom JWT during migration).
+ * (with backward-compatible fallback to custom JWT).
  */
 const requireAuth = asyncHandler(async (req, _res, next) => {
   const header = req.headers.authorization || '';
@@ -55,19 +54,10 @@ const requireAuth = asyncHandler(async (req, _res, next) => {
     }
   }
 
-  // 2. Backward-compatible fallback for legacy JWT token during migration
+  // 2. Backward-compatible fallback for JWT token
   try {
     const payload = verifyAccessToken(token);
-    // Check Firestore first for user
-    let user = await firestoreService.getById('users', payload.sub);
-
-    // If not found in Firestore, check MongoDB if active
-    if (!user) {
-      try {
-        const User = require('../models/User');
-        user = await User.findById(payload.sub).lean();
-      } catch {}
-    }
+    const user = await firestoreService.getById('users', payload.sub);
 
     if (!user || user.isActive === false) {
       throw ApiError.unauthorized('Account is inactive or not found');

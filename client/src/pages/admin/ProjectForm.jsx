@@ -61,7 +61,7 @@ export default function ProjectForm({ open, onClose, onSubmit, project, clients,
         <Input name="dueDate" type="date" label="Due date" value={form.dueDate} onChange={update('dueDate')} error={fieldErrors.dueDate} />
         <Input name="demoUrl" label="Live URL" placeholder="https://" value={form.demoUrl} onChange={update('demoUrl')} />
         <div className="sm:col-span-2">
-          <Input name="technologies" label="Technologies" hint="Comma separated, e.g. React, Node.js, MongoDB"
+          <Input name="technologies" label="Technologies" hint="Comma separated, e.g. React, Node.js, Firebase"
             value={form.technologies} onChange={update('technologies')} />
         </div>
         <label className="flex items-center gap-2 text-sm sm:col-span-2">

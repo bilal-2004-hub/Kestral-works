@@ -1,12 +1,12 @@
 const { body, param } = require('express-validator');
 const { PROJECT_STATUS } = require('../config/constants');
 
-exports.idRule = [param('id').isMongoId().withMessage('That project id is not valid')];
+exports.idRule = [param('id').trim().notEmpty().withMessage('That project id is not valid')];
 
 exports.createRules = [
   body('name').trim().notEmpty().withMessage('Project name is required').isLength({ max: 140 }),
   body('description').trim().notEmpty().withMessage('Add a short description').isLength({ max: 4000 }),
-  body('client').isMongoId().withMessage('Select a client'),
+  body('client').trim().notEmpty().withMessage('Select a client'),
   body('status').optional().isIn(PROJECT_STATUS),
   body('progress').optional().isInt({ min: 0, max: 100 }),
   body('technologies').optional().isArray(),
@@ -21,5 +21,5 @@ exports.updateRules = [
   body('status').optional().isIn(PROJECT_STATUS),
   body('progress').optional().isInt({ min: 0, max: 100 }),
   body('dueDate').optional().isISO8601().toDate(),
-  body('client').optional().isMongoId(),
+  body('client').optional().trim().notEmpty(),
 ];

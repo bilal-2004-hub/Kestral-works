@@ -13,11 +13,9 @@ if (!process.env.JWT_ACCESS_SECRET && isDev) {
 if (!process.env.JWT_REFRESH_SECRET && isDev) {
   process.env.JWT_REFRESH_SECRET = 'dev_refresh_secret_11a22b33c44d55e66f77a88b99c00d11';
 }
-if (!process.env.MONGO_URI && isDev) {
-  process.env.MONGO_URI = 'mongodb://127.0.0.1:27017/agency_platform';
-}
 
-const required = ['MONGO_URI', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
+// MONGO_URI is no longer required — database is Firebase/Firestore.
+const required = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   // Fail fast: a half-configured server is worse than one that refuses to boot.
@@ -28,7 +26,6 @@ module.exports = {
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 5000,
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
-  mongoUri: process.env.MONGO_URI,
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET,
     refreshSecret: process.env.JWT_REFRESH_SECRET,

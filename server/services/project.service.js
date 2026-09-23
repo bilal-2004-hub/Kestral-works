@@ -1,6 +1,4 @@
 const firestoreService = require('./firestore.service');
-const Project = require('../models/Project');
-const Task = require('../models/Task');
 const ApiError = require('../utils/ApiError');
 const { isStaff } = require('../middleware/auth');
 const { getPagination, buildMeta } = require('../utils/pagination');
@@ -72,91 +70,56 @@ function scopeAccess(user, id) {
 async function list(user, filters) {
   const { page, limit, skip } = getPagination(filters);
 
-  // Firestore primary read
-  if (firestoreService.db) {
-    const rawItems = await firestoreService.find('projects', (ref) => {
-      let q = ref;
-      const isArchivedFilter = filters.includeArchived === 'true';
-      if (!isArchivedFilter) {
-        q = q.where('isArchived', '==', false);
-      }
-      if (!isStaff(user)) {
-        const userId = user._id || user.uid;
-        q = q.where('client', '==', userId);
-      }
-      if (filters.status) {
-        q = q.where('status', '==', filters.status);
-      }
-      return q;
-    });
-
-    // Client-side search or sorting for memory safety
-    let filtered = rawItems;
-    if (filters.search) {
-      const term = filters.search.toLowerCase();
-      filtered = filtered.filter(
-        (p) => p.name?.toLowerCase().includes(term) || p.description?.toLowerCase().includes(term)
-      );
+  const rawItems = await firestoreService.find('projects', (ref) => {
+    let q = ref;
+    const isArchivedFilter = filters.includeArchived === 'true';
+    if (!isArchivedFilter) {
+      q = q.where('isArchived', '==', false);
     }
+    if (!isStaff(user)) {
+      const userId = user._id || user.uid;
+      q = q.where('client', '==', userId);
+    }
+    if (filters.status) {
+      q = q.where('status', '==', filters.status);
+    }
+    return q;
+  });
 
-    filtered.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-
-    const total = filtered.length;
-    const paginated = filtered.slice(skip, skip + limit);
-    const populated = await Promise.all(paginated.map(populateProject));
-
-    return { items: populated, meta: buildMeta({ page, limit, total }) };
+  // Client-side search or sorting for memory safety
+  let filtered = rawItems;
+  if (filters.search) {
+    const term = filters.search.toLowerCase();
+    filtered = filtered.filter(
+      (p) => p.name?.toLowerCase().includes(term) || p.description?.toLowerCase().includes(term)
+    );
   }
 
-  // Mongoose fallback
-  const query = { isArchived: filters.includeArchived === 'true' ? { $in: [true, false] } : false };
-  if (!isStaff(user)) query.client = user._id;
-  if (filters.status) query.status = filters.status;
-  if (filters.client && isStaff(user)) query.client = filters.client;
-  if (filters.search) query.$text = { $search: filters.search };
+  filtered.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
 
-  const [items, total] = await Promise.all([
-    Project.find(query).populate('client manager team files').sort({ updatedAt: -1 }).skip(skip).limit(limit).lean(),
-    Project.countDocuments(query),
-  ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  const total = filtered.length;
+  const paginated = filtered.slice(skip, skip + limit);
+  const populated = await Promise.all(paginated.map(populateProject));
+
+  return { items: populated, meta: buildMeta({ page, limit, total }) };
 }
 
 async function getById(user, id) {
-  let project = null;
+  const raw = await firestoreService.getById('projects', id);
+  if (!raw) throw ApiError.notFound('Project not found');
 
-  if (firestoreService.db) {
-    const raw = await firestoreService.getById('projects', id);
-    if (raw) {
-      const userId = user._id || user.uid;
-      const clientId = typeof raw.client === 'object' ? raw.client?._id : raw.client;
-      if (isStaff(user) || clientId === userId) {
-        project = await populateProject(raw);
-      }
-    }
-  }
+  const userId = user._id || user.uid;
+  const clientId = typeof raw.client === 'object' ? raw.client?._id : raw.client;
+  if (!isStaff(user) && clientId !== userId) throw ApiError.notFound('Project not found');
 
-  if (!project) {
-    const mongoProj = await Project.findOne(scopeAccess(user, id)).populate('client manager team files');
-    if (mongoProj) project = mongoProj.toJSON();
-  }
-
-  if (!project) throw ApiError.notFound('Project not found');
+  const project = await populateProject(raw);
 
   // Fetch tasks for project
-  let tasks = [];
-  if (firestoreService.db) {
-    const rawTasks = await firestoreService.find('tasks', (ref) =>
-      ref.where('project', '==', id)
-    );
-    tasks = isStaff(user) ? rawTasks : rawTasks.filter((t) => t.visibleToClient !== false);
-    tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
-  } else {
-    tasks = await Task.find({
-      project: project._id,
-      ...(isStaff(user) ? {} : { visibleToClient: true }),
-    }).populate('assignee', 'name avatar').sort({ order: 1, createdAt: 1 }).lean();
-  }
+  const rawTasks = await firestoreService.find('tasks', (ref) =>
+    ref.where('project', '==', id)
+  );
+  const tasks = isStaff(user) ? rawTasks : rawTasks.filter((t) => t.visibleToClient !== false);
+  tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
 
   return { project, tasks };
 }
@@ -177,14 +140,8 @@ async function create(payload, actor) {
     startDate: payload.startDate ? new Date(payload.startDate) : new Date(),
   };
 
-  let project;
-  if (firestoreService.db) {
-    project = await firestoreService.create('projects', projectData);
-    project = await populateProject(project);
-  } else {
-    const doc = await Project.create({ ...payload, manager: payload.manager || actor._id });
-    project = doc.toJSON();
-  }
+  let project = await firestoreService.create('projects', projectData);
+  project = await populateProject(project);
 
   const clientId = typeof project.client === 'object' ? project.client._id : project.client;
   await notify({
@@ -199,12 +156,8 @@ async function create(payload, actor) {
 }
 
 async function update(id, payload, actor) {
-  let project = await firestoreService.getById('projects', id);
-  if (!project) {
-    const doc = await Project.findById(id);
-    if (!doc) throw ApiError.notFound('Project not found');
-    project = doc.toJSON();
-  }
+  const project = await firestoreService.getById('projects', id);
+  if (!project) throw ApiError.notFound('Project not found');
 
   const previousStatus = project.status;
   const previousProgress = project.progress;
@@ -213,17 +166,13 @@ async function update(id, payload, actor) {
   if (payload.name) {
     updatePayload.slug = payload.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
-
-  let updatedProject;
-  if (firestoreService.db) {
-    updatedProject = await firestoreService.update('projects', id, updatePayload);
-    updatedProject = await populateProject(updatedProject);
-  } else {
-    const doc = await Project.findById(id);
-    Object.assign(doc, payload);
-    await doc.save();
-    updatedProject = doc.toJSON();
+  if (payload.status === 'completed' && !project.completedAt) {
+    updatePayload.completedAt = new Date();
+    updatePayload.progress = 100;
   }
+
+  let updatedProject = await firestoreService.update('projects', id, updatePayload);
+  updatedProject = await populateProject(updatedProject);
 
   const clientId = typeof updatedProject.client === 'object' ? updatedProject.client._id : updatedProject.client;
 
@@ -261,7 +210,7 @@ async function update(id, payload, actor) {
 }
 
 async function addMilestone(id, milestoneData, actor) {
-  let project = await firestoreService.getById('projects', id);
+  const project = await firestoreService.getById('projects', id);
   if (!project) throw ApiError.notFound('Project not found');
 
   const milestones = project.milestones || [];
@@ -285,7 +234,7 @@ async function addMilestone(id, milestoneData, actor) {
 }
 
 async function updateMilestone(id, milestoneId, milestoneData, actor) {
-  let project = await firestoreService.getById('projects', id);
+  const project = await firestoreService.getById('projects', id);
   if (!project) throw ApiError.notFound('Project not found');
 
   const milestones = (project.milestones || []).map((m) => {
@@ -308,7 +257,7 @@ async function updateMilestone(id, milestoneId, milestoneData, actor) {
 }
 
 async function removeMilestone(id, milestoneId, actor) {
-  let project = await firestoreService.getById('projects', id);
+  const project = await firestoreService.getById('projects', id);
   if (!project) throw ApiError.notFound('Project not found');
 
   const milestones = (project.milestones || []).filter((m) => m._id !== milestoneId && m.id !== milestoneId);
@@ -334,23 +283,14 @@ async function remove(id) {
 }
 
 async function listPublicPortfolio({ category, limit = 12 }) {
-  if (firestoreService.db) {
-    const items = await firestoreService.find('projects', (ref) => {
-      let q = ref.where('isPublic', '==', true).where('isArchived', '==', false);
-      if (category && category !== 'all') {
-        q = q.where('category', '==', category);
-      }
-      return q;
-    }, { limit: Number(limit) || 12 });
-    return items;
-  }
-  const query = { isPublic: true, isArchived: false };
-  if (category && category !== 'all') query.category = category;
-  return Project.find(query)
-    .select('name slug description category technologies coverImage demoUrl status completedAt')
-    .sort({ completedAt: -1, createdAt: -1 })
-    .limit(Math.min(Number(limit) || 12, 48))
-    .lean();
+  const items = await firestoreService.find('projects', (ref) => {
+    let q = ref.where('isPublic', '==', true).where('isArchived', '==', false);
+    if (category && category !== 'all') {
+      q = q.where('category', '==', category);
+    }
+    return q;
+  }, { limit: Number(limit) || 12 });
+  return items;
 }
 
 module.exports = {

@@ -2,7 +2,7 @@
   "name": "agency-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "Company website, client portal and admin dashboard (React + Express + MongoDB)",
+  "description": "Company website, client portal and admin dashboard (React + Express + Firebase/Firestore)",
   "scripts": {
     "install:all": "cd server && npm install && cd ../client && npm install",
     "dev:server": "cd server && npm run dev",

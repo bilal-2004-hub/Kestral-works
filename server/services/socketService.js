@@ -1,7 +1,7 @@
 const { Server } = require('socket.io');
 const { clientUrl } = require('../config/env');
 const { verifyAccessToken } = require('../utils/token');
-const User = require('../models/User');
+const firestoreService = require('./firestore.service');
 const logger = require('../utils/logger');
 
 let io = null;
@@ -27,10 +27,14 @@ function init(httpServer) {
       if (!token) return next(new Error('Authentication required'));
 
       const payload = verifyAccessToken(token);
-      const user = await User.findById(payload.sub).select('_id name role isActive').lean();
-      if (!user || !user.isActive) return next(new Error('Account inactive'));
+      const user = await firestoreService.getById('users', payload.sub);
+      if (!user || user.isActive === false) return next(new Error('Account inactive'));
 
-      socket.user = user;
+      socket.user = {
+        _id: user._id || user.uid || payload.sub,
+        id: user._id || user.uid || payload.sub,
+        ...user,
+      };
       next();
     } catch (err) {
       next(new Error('Invalid session'));
@@ -47,15 +51,24 @@ function init(httpServer) {
     // Client requests to join a project room.
     socket.on('join:project', async (projectId) => {
       try {
-        const Project = require('../models/Project');
         const isStaff = user.role === 'admin' || user.role === 'manager';
-        const query = isStaff ? { _id: projectId } : { _id: projectId, client: user._id };
-        const project = await Project.findOne(query).select('_id').lean();
+        const project = await firestoreService.getById('projects', projectId);
 
-        if (!project) {
+        if (!project || project.isArchived) {
+          socket.emit('error:room', { message: 'Project not found' });
+          return;
+        }
+
+        const clientMatch =
+          project.client === user._id ||
+          project.client === user.uid ||
+          project.client === user.id;
+
+        if (!isStaff && !clientMatch) {
           socket.emit('error:room', { message: 'Not authorised for this project' });
           return;
         }
+
         socket.join(`project:${projectId}`);
         socket.emit('joined:project', { projectId });
         logger.info(`${user.name} joined room project:${projectId}`);

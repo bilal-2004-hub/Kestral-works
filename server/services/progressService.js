@@ -1,6 +1,4 @@
-const Task = require('../models/Task');
-const Project = require('../models/Project');
-const ProgressHistory = require('../models/ProgressHistory');
+const firestoreService = require('./firestore.service');
 const { emitToProject, emitToUser } = require('./socketService');
 const { notify } = require('./notification.service');
 const logger = require('../utils/logger');
@@ -24,7 +22,7 @@ function calculateFromTasks(tasks) {
 }
 
 /**
- * Recalculate project progress from its tasks, save to DB,
+ * Recalculate project progress from its tasks, save to Firestore,
  * log the change, and emit real-time events.
  *
  * @param {string} projectId
@@ -33,51 +31,56 @@ function calculateFromTasks(tasks) {
  */
 async function recalculateAndSave(projectId, changedBy, reason = 'Task update') {
   try {
-    const project = await Project.findById(projectId);
+    const project = await firestoreService.getById('projects', projectId);
     if (!project) return null;
 
     // If manual mode, don't recalculate from tasks.
     if (project.progressMode === 'manual') return project;
 
-    const tasks = await Task.find({ project: projectId }).lean();
+    const tasks = await firestoreService.find('tasks', (ref) =>
+      ref.where('project', '==', projectId)
+    );
+
     const newProgress = calculateFromTasks(tasks);
-    const previousProgress = project.progress;
+    const previousProgress = project.progress || 0;
 
     // No change — skip the write and emit.
     if (newProgress === previousProgress) return project;
 
-    project.progress = newProgress;
-    project.lastProgressAt = new Date();
+    const updateData = {
+      progress: newProgress,
+      lastProgressAt: new Date(),
+    };
 
     // Auto-complete logic.
     if (newProgress === 100 && project.autoComplete && project.status !== 'completed') {
-      project.status = 'completed';
-      project.completedAt = new Date();
+      updateData.status = 'completed';
+      updateData.completedAt = new Date();
     }
 
-    await project.save();
+    const updatedProject = await firestoreService.update('projects', projectId, updateData);
 
     // Record history.
-    await ProgressHistory.create({
+    await firestoreService.create('progressHistory', {
       project: projectId,
       previousProgress,
       newProgress,
-      changedBy,
+      changedBy: changedBy || null,
       reason,
-    });
+    }).catch((err) => logger.warn('progressHistory write failed:', err.message));
 
     // Build task summary for the event payload.
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.status === 'completed').length;
 
     const eventPayload = {
-      projectId: project._id.toString(),
+      projectId: projectId.toString(),
       progress: newProgress,
       previousProgress,
-      status: project.status,
+      status: updatedProject.status || project.status,
       totalTasks,
       completedTasks,
-      lastProgressAt: project.lastProgressAt,
+      lastProgressAt: updateData.lastProgressAt,
       reason,
     };
 
@@ -87,30 +90,31 @@ async function recalculateAndSave(projectId, changedBy, reason = 'Task update') 
     // If status auto-changed, emit that too.
     if (newProgress === 100 && project.autoComplete && previousProgress < 100) {
       emitToProject(projectId, 'project:statusChanged', {
-        projectId: project._id.toString(),
-        status: project.status,
-        previousStatus: 'in_progress',
+        projectId: projectId.toString(),
+        status: 'completed',
+        previousStatus: project.status,
       });
     }
 
     // Create a notification only for meaningful jumps (>= 5%).
-    if (Math.abs(newProgress - previousProgress) >= 5) {
+    if (Math.abs(newProgress - previousProgress) >= 5 && project.client) {
+      const clientId = typeof project.client === 'object' ? project.client._id : project.client;
       await notify({
-        user: project.client,
+        user: clientId,
         type: 'progress_updated',
         title: `${project.name} progress: ${previousProgress}% → ${newProgress}%`,
         body: reason,
-        link: `/portal/projects/${project._id}`,
+        link: `/portal/projects/${projectId}`,
       });
 
       // Also push the notification via socket.
-      emitToUser(project.client.toString(), 'notification:new', {
+      emitToUser(clientId.toString(), 'notification:new', {
         title: `${project.name} progress: ${previousProgress}% → ${newProgress}%`,
         body: reason,
       });
     }
 
-    return project;
+    return updatedProject;
   } catch (err) {
     logger.error('progressService.recalculateAndSave failed:', err.message);
     return null;

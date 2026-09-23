@@ -1,5 +1,4 @@
 const firestoreService = require('./firestore.service');
-const Feedback = require('../models/Feedback');
 const ApiError = require('../utils/ApiError');
 const { isStaff } = require('../middleware/auth');
 const { getPagination, buildMeta } = require('../utils/pagination');
@@ -46,64 +45,41 @@ async function list(user, filters) {
   const { page, limit, skip } = getPagination(filters);
   const userId = user._id || user.uid;
 
-  if (firestoreService.db) {
-    const rawItems = await firestoreService.find('feedback', (ref) => {
-      let q = ref;
-      if (!isStaff(user)) {
-        q = q.where('client', '==', userId);
-      }
-      if (filters.status) {
-        q = q.where('status', '==', filters.status);
-      }
-      if (filters.project) {
-        q = q.where('project', '==', filters.project);
-      }
-      return q;
-    });
+  const rawItems = await firestoreService.find('feedback', (ref) => {
+    let q = ref;
+    if (!isStaff(user)) {
+      q = q.where('client', '==', userId);
+    }
+    if (filters.status) {
+      q = q.where('status', '==', filters.status);
+    }
+    if (filters.project) {
+      q = q.where('project', '==', filters.project);
+    }
+    return q;
+  });
 
-    rawItems.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  rawItems.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-    const total = rawItems.length;
-    const paginated = rawItems.slice(skip, skip + limit);
-    const populated = await Promise.all(paginated.map(populateFeedback));
+  const total = rawItems.length;
+  const paginated = rawItems.slice(skip, skip + limit);
+  const populated = await Promise.all(paginated.map(populateFeedback));
 
-    return { items: populated, meta: buildMeta({ page, limit, total }) };
-  }
-
-  // Mongoose fallback
-  const query = isStaff(user) ? {} : { client: user._id };
-  if (filters.status) query.status = filters.status;
-  if (filters.project) query.project = filters.project;
-
-  const [items, total] = await Promise.all([
-    Feedback.find(query).populate('client project task replies.author attachments').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-    Feedback.countDocuments(query),
-  ]);
-  return { items, meta: buildMeta({ page, limit, total }) };
+  return { items: populated, meta: buildMeta({ page, limit, total }) };
 }
 
 async function getById(user, id) {
-  let feedback = null;
   const userId = user._id || user.uid;
+  const raw = await firestoreService.getById('feedback', id);
 
-  if (firestoreService.db) {
-    const raw = await firestoreService.getById('feedback', id);
-    if (raw) {
-      const clientId = typeof raw.client === 'object' ? raw.client._id : raw.client;
-      if (isStaff(user) || clientId === userId) {
-        feedback = await populateFeedback(raw);
-      }
+  if (raw) {
+    const clientId = typeof raw.client === 'object' ? raw.client._id : raw.client;
+    if (isStaff(user) || clientId === userId) {
+      return populateFeedback(raw);
     }
   }
 
-  if (!feedback) {
-    const query = isStaff(user) ? { _id: id } : { _id: id, client: user._id };
-    const doc = await Feedback.findOne(query).populate('client project task replies.author attachments');
-    if (doc) feedback = doc.toJSON();
-  }
-
-  if (!feedback) throw ApiError.notFound('Feedback not found');
-  return feedback;
+  throw ApiError.notFound('Feedback not found');
 }
 
 async function create(user, payload) {
@@ -118,14 +94,8 @@ async function create(user, payload) {
     replies: [],
   };
 
-  let feedback;
-  if (firestoreService.db) {
-    feedback = await firestoreService.create('feedback', data);
-    feedback = await populateFeedback(feedback);
-  } else {
-    const doc = await Feedback.create({ ...payload, client: user._id });
-    feedback = doc.toJSON();
-  }
+  let feedback = await firestoreService.create('feedback', data);
+  feedback = await populateFeedback(feedback);
 
   await notifyStaff({
     type: 'feedback_new',
@@ -154,24 +124,16 @@ async function reply(user, id, message) {
     status = 'in_review';
   }
 
-  let updated;
-  if (firestoreService.db) {
-    // Map replies to plain Object for Firestore
-    const plainReplies = replies.map((r) => ({
-      _id: r._id || 'rep_' + Date.now(),
-      author: typeof r.author === 'object' ? r.author._id : r.author,
-      message: r.message,
-      createdAt: r.createdAt || new Date(),
-    }));
-    updated = await firestoreService.update('feedback', id, { replies: plainReplies, status });
-    updated = await populateFeedback(updated);
-  } else {
-    const doc = await Feedback.findById(id);
-    doc.replies.push({ author: user._id, message });
-    if (isStaff(user) && doc.status === 'open') doc.status = 'in_review';
-    await doc.save();
-    updated = doc.toJSON();
-  }
+  // Map replies to plain Object for Firestore
+  const plainReplies = replies.map((r) => ({
+    _id: r._id || 'rep_' + Date.now(),
+    author: typeof r.author === 'object' ? r.author._id : r.author,
+    message: r.message,
+    createdAt: r.createdAt || new Date(),
+  }));
+
+  let updated = await firestoreService.update('feedback', id, { replies: plainReplies, status });
+  updated = await populateFeedback(updated);
 
   const clientId = typeof feedback.client === 'object' ? feedback.client._id : feedback.client;
   const recipient = isStaff(user) ? clientId : null;
@@ -197,29 +159,16 @@ async function reply(user, id, message) {
 }
 
 async function updateStatus(id, status) {
-  let feedback = await firestoreService.getById('feedback', id);
-  if (!feedback) {
-    const doc = await Feedback.findById(id);
-    if (!doc) throw ApiError.notFound('Feedback not found');
-    feedback = doc.toJSON();
-  }
+  const feedback = await firestoreService.getById('feedback', id);
+  if (!feedback) throw ApiError.notFound('Feedback not found');
 
   const updateData = {
     status,
     resolvedAt: status === 'resolved' ? new Date() : null,
   };
 
-  let updated;
-  if (firestoreService.db) {
-    updated = await firestoreService.update('feedback', id, updateData);
-    updated = await populateFeedback(updated);
-  } else {
-    const doc = await Feedback.findById(id);
-    doc.status = status;
-    doc.resolvedAt = status === 'resolved' ? new Date() : undefined;
-    await doc.save();
-    updated = doc.toJSON();
-  }
+  let updated = await firestoreService.update('feedback', id, updateData);
+  updated = await populateFeedback(updated);
 
   const clientId = typeof updated.client === 'object' ? updated.client._id : updated.client;
   if (clientId) {

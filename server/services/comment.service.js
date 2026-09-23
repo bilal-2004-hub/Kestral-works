@@ -1,7 +1,4 @@
 const firestoreService = require('./firestore.service');
-const Comment = require('../models/Comment');
-const Project = require('../models/Project');
-const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { isStaff } = require('../middleware/auth');
 const { assertProjectAccess } = require('./task.service');
@@ -29,19 +26,11 @@ async function populateComment(c) {
 async function list(user, projectId) {
   await assertProjectAccess(user, projectId);
 
-  if (firestoreService.db) {
-    const rawComments = await firestoreService.find('comments', (ref) =>
-      ref.where('project', '==', projectId)
-    );
-    rawComments.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-    return Promise.all(rawComments.map(populateComment));
-  }
-
-  return Comment.find({ project: projectId })
-    .populate('author', 'name role avatar company')
-    .populate('attachments', 'originalName url mimeType size')
-    .sort({ createdAt: 1 })
-    .lean();
+  const rawComments = await firestoreService.find('comments', (ref) =>
+    ref.where('project', '==', projectId)
+  );
+  rawComments.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  return Promise.all(rawComments.map(populateComment));
 }
 
 async function create(user, payload) {
@@ -54,14 +43,8 @@ async function create(user, payload) {
     isResolved: false,
   };
 
-  let comment;
-  if (firestoreService.db) {
-    comment = await firestoreService.create('comments', commentData);
-    comment = await populateComment(comment);
-  } else {
-    const doc = await Comment.create({ ...payload, author: user._id });
-    comment = doc.toJSON();
-  }
+  let comment = await firestoreService.create('comments', commentData);
+  comment = await populateComment(comment);
 
   const clientId = typeof project.client === 'object' ? project.client._id : project.client;
 
@@ -77,14 +60,8 @@ async function create(user, payload) {
       }).catch(() => {});
     }
   } else {
-    let staffIds = [];
-    if (firestoreService.db) {
-      const staffDocs = await firestoreService.find('users', (ref) => ref.where('role', 'in', ['admin', 'manager']));
-      staffIds = staffDocs.map((s) => s._id);
-    } else {
-      const staff = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true }).select('_id').lean();
-      staffIds = staff.map((s) => s._id);
-    }
+    const staffDocs = await firestoreService.find('users', (ref) => ref.where('role', 'in', ['admin', 'manager']));
+    const staffIds = staffDocs.map((s) => s._id);
 
     await notifyMany(staffIds, {
       type: 'comment_new',
@@ -98,28 +75,14 @@ async function create(user, payload) {
 }
 
 async function resolve(user, id, isResolved) {
-  let comment;
-  if (firestoreService.db) {
-    comment = await firestoreService.update('comments', id, { isResolved });
-  } else {
-    const doc = await Comment.findById(id);
-    if (!doc) throw ApiError.notFound('Comment not found');
-    doc.isResolved = isResolved;
-    await doc.save();
-    comment = doc.toJSON();
-  }
-
+  const comment = await firestoreService.update('comments', id, { isResolved });
   if (!comment) throw ApiError.notFound('Comment not found');
   return comment;
 }
 
 async function remove(user, id) {
-  let comment = await firestoreService.getById('comments', id);
-  if (!comment) {
-    const doc = await Comment.findById(id);
-    if (!doc) throw ApiError.notFound('Comment not found');
-    comment = doc.toJSON();
-  }
+  const comment = await firestoreService.getById('comments', id);
+  if (!comment) throw ApiError.notFound('Comment not found');
 
   const authorId = typeof comment.author === 'object' ? comment.author._id : comment.author;
   const userId = user._id || user.uid;
@@ -128,12 +91,7 @@ async function remove(user, id) {
     throw ApiError.forbidden();
   }
 
-  if (firestoreService.db) {
-    await firestoreService.remove('comments', id);
-  } else {
-    await Comment.findByIdAndDelete(id);
-  }
-
+  await firestoreService.remove('comments', id);
   return { id };
 }
 

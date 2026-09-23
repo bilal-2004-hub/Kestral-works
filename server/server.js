@@ -1,14 +1,16 @@
 const http = require('http');
 const app = require('./app');
 const { port, env } = require('./config/env');
-const { connectDatabase } = require('./config/db');
 const logger = require('./utils/logger');
 const socketService = require('./services/socketService');
+
+// Ensure Firebase Admin is initialized before handling any requests.
+// The module initializes itself on require; this import is explicit for clarity.
+require('./config/firebaseAdmin');
 
 let server;
 
 async function start() {
-  await connectDatabase();
   const httpServer = http.createServer(app);
   socketService.init(httpServer);
   server = httpServer.listen(port, () => logger.info(`API listening on :${port} (${env})`));
@@ -19,7 +21,7 @@ start().catch((err) => {
   process.exit(1);
 });
 
-/* Shut down cleanly so in-flight requests finish and Mongo closes its sockets. */
+/* Shut down cleanly so in-flight requests finish and Firebase connections close. */
 const shutdown = (signal) => () => {
   logger.info(`${signal} received, shutting down`);
   server?.close(() => process.exit(0));

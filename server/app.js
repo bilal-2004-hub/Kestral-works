@@ -5,7 +5,6 @@ const cors = require('cors');
 const morgan = require('morgan');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 
 const { env, clientUrl } = require('./config/env');
@@ -24,7 +23,7 @@ app.use(cors({ origin: clientUrl.split(','), credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
-app.use(mongoSanitize());   // strips $ and . from user input, blocking operator injection
+// express-mongo-sanitize removed — no MongoDB in use.
 app.use(hpp());             // collapses duplicated query params
 app.use(compression());
 if (env === 'development') app.use(morgan('dev'));

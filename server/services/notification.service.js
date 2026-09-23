@@ -1,6 +1,4 @@
 const firestoreService = require('./firestore.service');
-const Notification = require('../models/Notification');
-const User = require('../models/User');
 const logger = require('../utils/logger');
 const { emitToUser } = require('./socketService');
 
@@ -20,13 +18,7 @@ async function notify({ user, type, title, body, link }) {
       isRead: false,
     };
 
-    let notification;
-    if (firestoreService.db) {
-      notification = await firestoreService.create('notifications', data);
-    } else {
-      const doc = await Notification.create(data);
-      notification = doc.toJSON();
-    }
+    const notification = await firestoreService.create('notifications', data);
 
     // Push real-time event via WebSocket
     emitToUser(userId, 'notification:new', {
@@ -51,13 +43,10 @@ async function notifyMany(userIds = [], payload) {
 
 async function notifyStaff(payload) {
   let staffIds = [];
-  if (firestoreService.db) {
-    const staffDocs = await firestoreService.find('users', (ref) => ref.where('role', 'in', ['admin', 'manager']));
-    staffIds = staffDocs.map((s) => s._id);
-  } else {
-    const staff = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true }).select('_id').lean();
-    staffIds = staff.map((s) => s._id);
-  }
+  const staffDocs = await firestoreService.find('users', (ref) =>
+    ref.where('role', 'in', ['admin', 'manager'])
+  );
+  staffIds = staffDocs.filter((s) => s.isActive !== false).map((s) => s._id);
 
   return notifyMany(staffIds, payload);
 }

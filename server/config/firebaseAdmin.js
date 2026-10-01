@@ -54,10 +54,35 @@ function initializeFirebaseAdmin() {
     }
   }
 
-  // 2. Check Direct Environment Variables (Client Email + Private Key)
+  // 2. Check Service Account Key directly as JSON string or base64 (easiest for Vercel)
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!credential && serviceAccountJson) {
+    try {
+      const parsed = JSON.parse(serviceAccountJson);
+      credential = cert(parsed);
+      logger.info('Firebase Admin initialized using FIREBASE_SERVICE_ACCOUNT_KEY');
+    } catch {
+      try {
+        const decoded = Buffer.from(serviceAccountJson, 'base64').toString('utf8');
+        const parsed = JSON.parse(decoded);
+        credential = cert(parsed);
+        logger.info('Firebase Admin initialized using base64 FIREBASE_SERVICE_ACCOUNT_KEY');
+      } catch (err) {
+        logger.error(`Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY: ${err.message}`);
+      }
+    }
+  }
+
+  // 3. Check Direct Environment Variables (Client Email + Private Key)
   if (!credential && FIREBASE_PROJECT_ID && FIREBASE_CLIENT_EMAIL && FIREBASE_PRIVATE_KEY) {
     try {
-      const formattedPrivateKey = FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+      let formattedPrivateKey = FIREBASE_PRIVATE_KEY.trim();
+      // Remove surrounding quotes if added by env copy-paste
+      if ((formattedPrivateKey.startsWith('"') && formattedPrivateKey.endsWith('"')) ||
+          (formattedPrivateKey.startsWith("'") && formattedPrivateKey.endsWith("'"))) {
+        formattedPrivateKey = formattedPrivateKey.slice(1, -1);
+      }
+      formattedPrivateKey = formattedPrivateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
       credential = cert({
         projectId: FIREBASE_PROJECT_ID,
         clientEmail: FIREBASE_CLIENT_EMAIL,
@@ -69,13 +94,15 @@ function initializeFirebaseAdmin() {
     }
   }
 
-  // 3. Application Default Credentials fallback
+  // 4. Application Default Credentials fallback
   if (!credential) {
     try {
       credential = applicationDefault();
       logger.info('Firebase Admin attempting Application Default Credentials');
     } catch (err) {
-      logger.warn('No valid Firebase credentials provided. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, or FIREBASE_SERVICE_ACCOUNT_PATH in server/.env');
+      logger.error(
+        'No valid Firebase credentials provided. Set FIREBASE_SERVICE_ACCOUNT_KEY (or FIREBASE_CLIENT_EMAIL & FIREBASE_PRIVATE_KEY) in Vercel Environment Variables.'
+      );
     }
   }
 

@@ -8,8 +8,8 @@ const { env } = require('../config/env');
 const refreshCookie = {
   httpOnly: true,
   secure: env === 'production',
-  sameSite: env === 'production' ? 'strict' : 'lax',
-  path: '/api/auth',
+  sameSite: env === 'production' ? 'none' : 'lax',
+  path: '/',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -57,7 +57,12 @@ exports.refresh = asyncHandler(async (req, res) => {
 });
 
 exports.logout = asyncHandler(async (_req, res) => {
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: env === 'production',
+    sameSite: env === 'production' ? 'none' : 'lax',
+    path: '/',
+  });
   success(res, { message: 'Signed out' });
 });
 

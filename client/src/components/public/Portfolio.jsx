@@ -69,7 +69,7 @@ const CURATED_PORTFOLIO = [
 
 export default function Portfolio() {
   const [activeCategory, setActiveCategory] = useState('All Work');
-  const { data: dbProjects } = useFetch(() => projectApi.list({ limit: 10 }), []);
+  const { data: dbProjects } = useFetch(() => projectApi.publicPortfolio({ limit: 10 }), []);
 
   const projects = useMemo(() => {
     const list = dbProjects && dbProjects.length > 0 ? dbProjects : CURATED_PORTFOLIO;

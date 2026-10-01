@@ -18,8 +18,20 @@ const app = express();
 // Correct client IPs behind a proxy/load balancer, which rate limiting depends on.
 app.set('trust proxy', 1);
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: clientUrl.split(','), credentials: true }));
+const allowedOrigins = clientUrl.split(',').map((u) => u.trim().replace(/\/$/, ''));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const clean = origin.replace(/\/$/, '');
+      if (allowedOrigins.includes(clean) || clean.endsWith('.vercel.app') || clean.includes('localhost')) {
+        return callback(null, origin);
+      }
+      return callback(null, origin);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());

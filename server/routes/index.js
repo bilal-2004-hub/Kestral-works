@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const { SERVICES, PROFESSIONAL_FIELDS } = require('../config/constants');
 
+router.get('/', (_req, res) => res.json({ success: true, message: 'Kestral Works API is online', version: '1.0.0' }));
+router.get('/favicon.ico', (_req, res) => res.status(204).end());
 router.get('/health', (_req, res) => res.json({ success: true, message: 'API is running', uptime: process.uptime() }));
 router.get('/services', (_req, res) => res.json({ success: true, data: SERVICES }));
 router.get('/professional-fields', (_req, res) => res.json({ success: true, data: PROFESSIONAL_FIELDS }));

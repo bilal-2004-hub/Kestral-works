@@ -29,7 +29,7 @@ app.use(compression());
 if (env === 'development') app.use(morgan('dev'));
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7d' }));
-app.use('/api', apiLimiter, routes);
+app.use(['/api', '/'], apiLimiter, routes);
 
 app.use(notFound);
 app.use(errorHandler);

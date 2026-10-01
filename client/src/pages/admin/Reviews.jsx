@@ -75,17 +75,17 @@ export default function AdminReviews() {
               <div className="flex items-center gap-3">
                 <Avatar name={review.client?.name} src={review.client?.avatar} size={38} />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-marine-900">{review.client?.name}</p>
-                  <p className="truncate text-xs text-mist-600">{review.client?.company} · {review.project?.name}</p>
+                  <p className="truncate text-sm font-semibold text-white">{review.client?.name}</p>
+                  <p className="truncate text-xs text-marine-100/60 font-mono">{review.client?.company} · {review.project?.name}</p>
                 </div>
               </div>
               <StatusBadge status={review.status} />
             </div>
 
             <div className="mt-4"><StarRating value={review.rating} /></div>
-            {review.title && <h3 className="mt-2 font-medium text-marine-900">{review.title}</h3>}
-            <p className="mt-1 text-sm text-mist-600">{review.body}</p>
-            <p className="mt-3 text-xs text-mist-400">Submitted {formatDate(review.createdAt)}</p>
+            {review.title && <h3 className="mt-2 font-semibold text-white">{review.title}</h3>}
+            <p className="mt-1 text-sm text-marine-100/80">{review.body}</p>
+            <p className="mt-3 text-xs text-marine-100/40 font-mono">Submitted {formatDate(review.createdAt)}</p>
 
             <div className="mt-4 flex flex-wrap gap-2">
               {review.status !== 'approved' && (

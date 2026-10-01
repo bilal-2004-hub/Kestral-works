@@ -71,6 +71,122 @@ exports.upload = asyncHandler(async (req, res) => {
     docs.push(doc);
   }
 
+  // ── Milestone & Task advancement & progress recalculation ───────────────────
+  if (req.body.project) {
+    try {
+      const progressService = require('../services/progressService');
+      const projectId = req.body.project;
+      const project = await firestoreService.getById('projects', projectId);
+
+      if (project && Array.isArray(project.milestones) && project.milestones.length > 0) {
+        const sorted = [...project.milestones].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+        // Find current active milestone: prefer in_progress, fall back to first pending
+        const currentIdx = sorted.findIndex((m) => m.status === 'in_progress');
+        const fallbackIdx = sorted.findIndex((m) => m.status === 'pending');
+        const activeIdx = currentIdx !== -1 ? currentIdx : fallbackIdx;
+
+        if (activeIdx !== -1) {
+          const now = new Date();
+
+          // Mark the active milestone as completed
+          sorted[activeIdx] = {
+            ...sorted[activeIdx],
+            status: 'completed',
+            progress: 100,
+            completedAt: now,
+          };
+
+          // Advance the next pending milestone to in_progress
+          let nextAdvanced = false;
+          for (let i = activeIdx + 1; i < sorted.length; i++) {
+            if (sorted[i].status === 'pending') {
+              sorted[i] = { ...sorted[i], status: 'in_progress', progress: 0 };
+              nextAdvanced = true;
+              break;
+            }
+          }
+
+          // Persist updated milestones
+          await firestoreService.update('projects', projectId, { milestones: sorted });
+
+          // Emit milestone socket event so client re-fetches timeline
+          progressService.emitMilestoneEvent(projectId, {
+            action: 'file_upload_advance',
+            milestones: sorted,
+            completedMilestone: sorted[activeIdx],
+            nextMilestone: nextAdvanced ? sorted.find((m) => m.status === 'in_progress') : null,
+          });
+        }
+      }
+
+      // Also advance corresponding deliverable tasks for the project
+      const rawTasks = await firestoreService.find('tasks', (ref) =>
+        ref.where('project', '==', projectId)
+      );
+      if (rawTasks && rawTasks.length > 0) {
+        const sortedTasks = [...rawTasks].sort((a, b) => (a.order || 0) - (b.order || 0));
+        const activeTask = sortedTasks.find((t) => t.status === 'in_progress') || sortedTasks.find((t) => t.status === 'pending');
+        if (activeTask) {
+          const now = new Date();
+          await firestoreService.update('tasks', activeTask._id, {
+            status: 'completed',
+            completedAt: now,
+          });
+          progressService.emitTaskEvent(projectId, 'task:updated', {
+            ...activeTask,
+            status: 'completed',
+            completedAt: now,
+          });
+
+          // Advance next pending task
+          const nextPendingTask = sortedTasks.find(
+            (t) => t._id !== activeTask._id && t.status === 'pending'
+          );
+          if (nextPendingTask) {
+            await firestoreService.update('tasks', nextPendingTask._id, {
+              status: 'in_progress',
+            });
+            progressService.emitTaskEvent(projectId, 'task:updated', {
+              ...nextPendingTask,
+              status: 'in_progress',
+            });
+          }
+        }
+      }
+
+      // Check if uploaded files contain PDF or DOC requirements document
+      const isDocOrPdf = docs.some((d) => {
+        const name = (d.originalName || d.name || '').toLowerCase();
+        const mime = (d.mimeType || '').toLowerCase();
+        return (
+          name.endsWith('.pdf') ||
+          name.endsWith('.doc') ||
+          name.endsWith('.docx') ||
+          mime.includes('pdf') ||
+          mime.includes('msword') ||
+          mime.includes('wordprocessingml')
+        );
+      });
+
+      // Recalculate progress and broadcast the updated % via socket
+      // When requirements document (PDF/DOC) is uploaded, complete progress to 30%
+      const targetProgress = isDocOrPdf ? 30 : null;
+      await progressService.recalculateAndSave(
+        projectId,
+        userId,
+        isDocOrPdf
+          ? `Requirements document submitted: ${docs.map((d) => d.originalName).join(', ')} (Phase 1 completed → 30%)`
+          : `Phase deliverable uploaded: ${docs.map((d) => d.originalName).join(', ')}`,
+        targetProgress
+      );
+    } catch (advanceErr) {
+      // Non-fatal — the upload succeeded; just log the issue
+      logger.warn(`Milestone/task advance after file upload failed: ${advanceErr.message}`);
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   created(res, { data: docs, message: 'Files uploaded' });
 });
 

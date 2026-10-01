@@ -34,6 +34,9 @@ module.exports = {
   },
   bcryptRounds: Number(process.env.BCRYPT_ROUNDS) || 10,
   maxUploadBytes: (Number(process.env.MAX_UPLOAD_MB) || 8) * 1024 * 1024,
+  firebaseApiKey: process.env.FIREBASE_API_KEY || 'AIzaSyBhN988Ic68ssAX_4xCDA7uU7naJlsNnl8',
+  seedAdminEmail: process.env.SEED_ADMIN_EMAIL || 'admin@kestrel.dev',
+  seedAdminPassword: process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!',
   mail: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT) || 587,

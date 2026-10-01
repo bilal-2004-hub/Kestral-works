@@ -15,6 +15,7 @@ export default function ProjectForm({ open, onClose, onSubmit, project, clients,
     technologies: (project?.technologies || []).join(', '),
     status: project?.status || 'planning',
     progress: project?.progress ?? 0,
+    startDate: project?.startDate ? project.startDate.slice(0, 10) : '',
     dueDate: project?.dueDate ? project.dueDate.slice(0, 10) : '',
     demoUrl: project?.demoUrl || '',
     isPublic: project?.isPublic || false,
@@ -31,6 +32,7 @@ export default function ProjectForm({ open, onClose, onSubmit, project, clients,
       ...form,
       progress: Number(form.progress),
       technologies: form.technologies.split(',').map((t) => t.trim()).filter(Boolean),
+      startDate: form.startDate || undefined,
       dueDate: form.dueDate || undefined,
     });
   };
@@ -58,6 +60,7 @@ export default function ProjectForm({ open, onClose, onSubmit, project, clients,
           options={PROJECT_STATUS.map((s) => ({ value: s, label: readableStatus(s) }))}
         />
         <Input name="progress" type="number" min="0" max="100" label="Progress (%)" value={form.progress} onChange={update('progress')} error={fieldErrors.progress} />
+        <Input name="startDate" type="date" label="Start date" value={form.startDate} onChange={update('startDate')} error={fieldErrors.startDate} />
         <Input name="dueDate" type="date" label="Due date" value={form.dueDate} onChange={update('dueDate')} error={fieldErrors.dueDate} />
         <Input name="demoUrl" label="Live URL" placeholder="https://" value={form.demoUrl} onChange={update('demoUrl')} />
         <div className="sm:col-span-2">

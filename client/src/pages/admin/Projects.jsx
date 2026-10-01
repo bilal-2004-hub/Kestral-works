@@ -45,7 +45,7 @@ export default function AdminProjects() {
   };
 
   const columns = [
-    { key: 'name', header: 'Project', render: (p) => <span className="font-medium text-marine-900">{p.name}</span> },
+    { key: 'name', header: 'Project', render: (p) => <span className="font-semibold text-white">{p.name}</span> },
     { key: 'client', header: 'Client', render: (p) => p.client?.company || p.client?.name || '—' },
     { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
     { key: 'progress', header: 'Progress', render: (p) => <div className="w-32"><ProgressBar value={p.progress} label="" /></div> },

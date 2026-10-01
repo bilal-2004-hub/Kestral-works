@@ -38,9 +38,9 @@ export default function AdminTasks() {
   };
 
   const columns = [
-    { key: 'title', header: 'Task', render: (t) => <span className="font-medium text-marine-900">{t.title}</span> },
+    { key: 'title', header: 'Task', render: (t) => <span className="font-semibold text-white">{t.title}</span> },
     { key: 'project', header: 'Project', render: (t) => (
-      <Link to={`/admin/projects/${t.project?._id}`} className="text-marine-700 hover:underline">{t.project?.name}</Link>
+      <Link to={`/admin/projects/${t.project?._id || t.project?.id}`} className="text-signal-400 font-medium hover:underline">{t.project?.name}</Link>
     ) },
     { key: 'assignee', header: 'Assigned to', render: (t) => t.assignee?.name || 'Unassigned' },
     { key: 'dueDate', header: 'Due', render: (t) => formatDate(t.dueDate) },
@@ -49,7 +49,7 @@ export default function AdminTasks() {
       <select
         value={t.status}
         onChange={(e) => onStatusChange(t, e.target.value)}
-        className="rounded-lg border border-mist-200 bg-white px-2 py-1.5 text-xs"
+        className="rounded-lg border border-white/15 bg-marine-950 px-2 py-1.5 text-xs text-white"
         aria-label={`Status for ${t.title}`}
       >
         {TASK_STATUS.map((s) => <option key={s} value={s}>{readableStatus(s)}</option>)}

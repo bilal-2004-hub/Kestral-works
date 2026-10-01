@@ -70,10 +70,10 @@ export default function AdminMessages() {
       <div className="space-y-3">
         {data?.map((message) => (
           <Card key={message._id} padded={false}>
-            <button onClick={() => open(message)} className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left hover:bg-mist-50">
+            <button onClick={() => open(message)} className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors">
               <div className="min-w-0">
-                <p className="font-medium text-marine-900">{message.name}{message.company ? ` · ${message.company}` : ''}</p>
-                <p className="mt-0.5 truncate text-xs text-mist-600">
+                <p className="font-semibold text-white">{message.name}{message.company ? ` · ${message.company}` : ''}</p>
+                <p className="mt-0.5 truncate text-xs text-marine-100/60 font-mono">
                   {message.service || 'General enquiry'} · {formatDateTime(message.createdAt)}
                 </p>
               </div>
@@ -81,11 +81,11 @@ export default function AdminMessages() {
             </button>
 
             {openId === message._id && (
-              <div className="border-t border-mist-200 px-5 py-4">
-                <p className="whitespace-pre-wrap text-sm text-mist-600">{message.message}</p>
+              <div className="border-t border-white/10 px-5 py-4">
+                <p className="whitespace-pre-wrap text-sm text-marine-100/80">{message.message}</p>
                 <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-                  <div><dt className="text-xs text-mist-600">Email</dt><dd>{message.email}</dd></div>
-                  <div><dt className="text-xs text-mist-600">Phone</dt><dd>{message.phone || '—'}</dd></div>
+                  <div><dt className="text-xs text-marine-100/50 font-mono uppercase">Email</dt><dd className="text-white font-mono">{message.email}</dd></div>
+                  <div><dt className="text-xs text-marine-100/50 font-mono uppercase">Phone</dt><dd className="text-white font-mono">{message.phone || '—'}</dd></div>
                 </dl>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button as="a" href={`mailto:${message.email}`} size="sm" icon={Mail}>Reply by email</Button>

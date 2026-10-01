@@ -20,13 +20,14 @@ async function populateTask(task) {
 }
 
 async function assertProjectAccess(user, projectId) {
-  const userId = user._id || user.uid;
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
   const project = await firestoreService.getById('projects', projectId);
 
   if (!project) throw ApiError.notFound('Project not found');
 
-  const clientId = typeof project.client === 'object' ? project.client?._id : project.client;
-  if (!isStaff(user) && clientId !== userId) {
+  const clientId = typeof project.client === 'object' ? (project.client?._id || project.client?.id) : project.client;
+  const isOwner = userIds.some((id) => id === clientId || id === project.clientId || id === project.claimedBy);
+  if (!isStaff(user) && !isOwner) {
     throw ApiError.notFound('Project not found');
   }
   return project;
@@ -34,41 +35,39 @@ async function assertProjectAccess(user, projectId) {
 
 async function list(user, filters) {
   const { page, limit, skip } = getPagination(filters);
-  const userId = user._id || user.uid;
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
 
   let targetProjectIds = [];
   if (filters.project) {
     await assertProjectAccess(user, filters.project);
     targetProjectIds = [filters.project];
   } else if (!isStaff(user)) {
-    const userProjects = await firestoreService.find('projects', (ref) => ref.where('client', '==', userId));
-    targetProjectIds = userProjects.map((p) => p._id);
+    const allProjects = await firestoreService.find('projects');
+    const userProjects = allProjects.filter((p) => {
+      if (p.isArchived === true) return false;
+      const pClient = typeof p.client === 'object' ? (p.client?._id || p.client?.id) : p.client;
+      return userIds.some((id) => id === pClient || id === p.clientId || id === p.claimedBy);
+    });
+    targetProjectIds = userProjects.map((p) => p._id || p.id);
+
+    if (targetProjectIds.length === 0) {
+      return { items: [], meta: buildMeta({ page, limit, total: 0 }) };
+    }
   }
 
-  const rawTasks = await firestoreService.find('tasks', (ref) => {
-    let q = ref;
-    if (targetProjectIds.length === 1) {
-      q = q.where('project', '==', targetProjectIds[0]);
+  const allTasks = await firestoreService.find('tasks');
+  let filtered = allTasks.filter((t) => {
+    const pId = typeof t.project === 'object' ? (t.project._id || t.project.id) : t.project;
+    if (targetProjectIds.length > 0 && !targetProjectIds.includes(pId)) return false;
+    if (!isStaff(user) && t.visibleToClient === false) return false;
+    if (filters.status && t.status !== filters.status) return false;
+    if (filters.priority && t.priority !== filters.priority) return false;
+    if (filters.assignee && isStaff(user)) {
+      const aId = typeof t.assignee === 'object' ? (t.assignee._id || t.assignee.id) : t.assignee;
+      if (aId !== filters.assignee) return false;
     }
-    if (!isStaff(user)) {
-      q = q.where('visibleToClient', '==', true);
-    }
-    if (filters.status) {
-      q = q.where('status', '==', filters.status);
-    }
-    if (filters.priority) {
-      q = q.where('priority', '==', filters.priority);
-    }
-    return q;
+    return true;
   });
-
-  let filtered = rawTasks;
-  if (targetProjectIds.length > 1) {
-    filtered = filtered.filter((t) => targetProjectIds.includes(t.project));
-  }
-  if (filters.assignee && isStaff(user)) {
-    filtered = filtered.filter((t) => t.assignee === filters.assignee);
-  }
 
   filtered.sort((a, b) => (a.order || 0) - (b.order || 0));
 
@@ -81,7 +80,7 @@ async function list(user, filters) {
 
 async function create(payload, actor) {
   const project = await assertProjectAccess(actor, payload.project);
-  const actorId = actor._id || actor.uid;
+  const actorId = actor._id || actor.uid || actor.id;
 
   const taskData = {
     ...payload,
@@ -118,7 +117,7 @@ async function update(id, payload, actor) {
   const task = await firestoreService.getById('tasks', id);
   if (!task) throw ApiError.notFound('Task not found');
 
-  const projectId = typeof task.project === 'object' ? task.project._id : task.project;
+  const projectId = typeof task.project === 'object' ? (task.project._id || task.project.id) : task.project;
   const project = await assertProjectAccess(actor, projectId);
 
   const previousStatus = task.status;

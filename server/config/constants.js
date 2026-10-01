@@ -1,6 +1,7 @@
 module.exports = {
   ROLES: { ADMIN: 'admin', MANAGER: 'manager', CLIENT: 'client' },
   PROJECT_STATUS: ['planning', 'in_progress', 'client_review', 'revision', 'completed', 'on_hold'],
+  PROJECT_REQUEST_STATUS: ['new', 'available', 'claimed', 'in_progress', 'review', 'revision', 'completed'],
   TASK_STATUS: ['pending', 'in_progress', 'review', 'revision', 'completed'],
   TASK_PRIORITY: ['low', 'medium', 'high', 'urgent'],
   MILESTONE_STATUS: ['pending', 'in_progress', 'completed'],
@@ -16,5 +17,19 @@ module.exports = {
     'SEO',
     'E-commerce Development',
     'Custom Software Solutions',
+  ],
+  PROFESSIONAL_FIELDS: [
+    'Web Development',
+    'Mobile App Development',
+    'UI/UX Design',
+    'Graphic Design',
+    'Software Development',
+    'Digital Marketing',
+    'SEO',
+    'E-commerce Development',
+    'Content Writing',
+    'Video Editing',
+    'Custom Software Solutions',
+    'Other',
   ],
 };

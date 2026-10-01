@@ -1,9 +1,11 @@
+const bcrypt = require('bcryptjs');
 const asyncHandler = require('../utils/asyncHandler');
 const { success, created } = require('../utils/apiResponse');
 const ApiError = require('../utils/ApiError');
 const firestoreService = require('../services/firestore.service');
 const { auth, isConfigured } = require('../config/firebaseAdmin');
 const { getPagination, buildMeta } = require('../utils/pagination');
+const { bcryptRounds } = require('../config/env');
 
 /* Admin-only client directory. */
 exports.list = asyncHandler(async (req, res) => {
@@ -76,11 +78,15 @@ exports.create = asyncHandler(async (req, res) => {
     }
   }
 
+  const rawPassword = req.body.password || 'ClientPass123!';
+  const passwordHash = await bcrypt.hash(rawPassword, bcryptRounds);
+
   const clientData = {
     ...req.body,
     email: normalizedEmail,
     role: 'client',
     isActive: true,
+    passwordHash,
   };
   delete clientData.password;
 
@@ -88,7 +94,8 @@ exports.create = asyncHandler(async (req, res) => {
   clientData.uid = uid;
   const client = await firestoreService.set('users', uid, clientData);
 
-  created(res, { data: client, message: 'Client created' });
+  const { passwordHash: _ph, ...safeClient } = client;
+  created(res, { data: safeClient, message: 'Client created' });
 });
 
 exports.update = asyncHandler(async (req, res) => {
@@ -122,10 +129,10 @@ exports.remove = asyncHandler(async (req, res) => {
 
 /* Self-service profile update, for any signed-in user. */
 exports.updateProfile = asyncHandler(async (req, res) => {
-  const { name, company, phone, position, avatar } = req.body;
+  const { name, company, phone, position, avatar, professionalField } = req.body;
   const userId = req.user._id || req.user.uid;
 
-  const user = await firestoreService.update('users', userId, { name, company, phone, position, avatar });
+  const user = await firestoreService.update('users', userId, { name, company, phone, position, avatar, professionalField });
   if (!user) throw ApiError.notFound('User not found');
 
   success(res, { data: user, message: 'Profile updated' });

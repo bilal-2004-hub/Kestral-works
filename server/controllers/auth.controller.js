@@ -17,8 +17,7 @@ const setSession = (res, { refreshToken }) => res.cookie('refreshToken', refresh
 
 exports.register = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
-  setSession(res, result);
-  created(res, { data: { user: result.user, accessToken: result.accessToken }, message: 'Account created' });
+  created(res, { data: { user: result.user }, message: 'Account created' });
 });
 
 exports.login = asyncHandler(async (req, res) => {

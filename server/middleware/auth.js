@@ -85,10 +85,51 @@ const requireRole = (...roles) => (req, _res, next) => {
   next();
 };
 
+/**
+ * Optional authentication middleware.
+ * Attaches req.user if a valid token is provided, otherwise continues without error.
+ */
+const optionalAuth = asyncHandler(async (req, _res, next) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : req.cookies?.accessToken;
+  if (!token) return next();
+
+  if (isConfigured && auth) {
+    try {
+      const decoded = await auth.verifyIdToken(token);
+      let userData = await firestoreService.getById('users', decoded.uid);
+      if (userData && userData.isActive !== false) {
+        req.user = {
+          _id: decoded.uid,
+          id: decoded.uid,
+          uid: decoded.uid,
+          ...userData,
+        };
+        return next();
+      }
+    } catch {}
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    const user = await firestoreService.getById('users', payload.sub);
+    if (user && user.isActive !== false) {
+      req.user = {
+        _id: user._id || user.id || payload.sub,
+        id: user._id || user.id || payload.sub,
+        uid: user.uid || user._id || user.id || payload.sub,
+        ...user,
+      };
+    }
+  } catch {}
+  next();
+});
+
 const isStaff = (user) => user && (user.role === 'admin' || user.role === 'manager');
 
 module.exports = {
   requireAuth,
+  optionalAuth,
   requireRole,
   isStaff,
   authenticateUser: requireAuth,

@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, ListChecks, MessageSquare, Star, Bell, User,
   Users, Inbox, Settings,
@@ -44,10 +44,11 @@ const AdminTasks = lazy(() => import('../pages/admin/Tasks.jsx'));
 const AdminFeedback = lazy(() => import('../pages/admin/Feedback.jsx'));
 const AdminReviews = lazy(() => import('../pages/admin/Reviews.jsx'));
 const AdminMessages = lazy(() => import('../pages/admin/Messages.jsx'));
+const AdminProjectRequests = lazy(() => import('../pages/admin/ProjectRequests.jsx'));
 
 const portalNav = [
   { to: '/portal', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/portal/projects', label: 'My projects', icon: FolderKanban },
+  { to: '/portal/projects', label: 'My Projects', icon: FolderKanban },
   { to: '/portal/tasks', label: 'Tasks', icon: ListChecks },
   { to: '/portal/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/portal/reviews', label: 'Reviews', icon: Star },
@@ -55,18 +56,33 @@ const portalNav = [
   { to: '/portal/profile', label: 'Profile', icon: User },
 ];
 
+const clientNav = [
+  { to: '/client/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/client/projects', label: 'My Projects', icon: FolderKanban },
+  { to: '/client/tasks', label: 'Tasks', icon: ListChecks },
+  { to: '/client/feedback', label: 'Feedback', icon: MessageSquare },
+  { to: '/client/reviews', label: 'Reviews', icon: Star },
+  { to: '/client/notifications', label: 'Notifications', icon: Bell },
+  { to: '/client/profile', label: 'Profile', icon: User },
+];
+
 const adminNav = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/admin/project-requests', label: 'Requests', icon: Inbox },
   { to: '/admin/clients', label: 'Clients', icon: Users },
   { to: '/admin/projects', label: 'Projects', icon: FolderKanban },
   { to: '/admin/tasks', label: 'Tasks', icon: ListChecks },
   { to: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/admin/reviews', label: 'Reviews', icon: Star },
-  { to: '/admin/messages', label: 'Enquiries', icon: Inbox },
+  { to: '/admin/messages', label: 'Enquiries', icon: MessageSquare },
   { to: '/admin/profile', label: 'Settings', icon: Settings },
 ];
 
-const Loading = () => <div className="grid min-h-[40vh] place-items-center"><Spinner /></div>;
+const Loading = () => (
+  <div className="grid min-h-[50vh] place-items-center">
+    <Spinner size={36} />
+  </div>
+);
 
 export default function AppRoutes() {
   return (
@@ -88,9 +104,11 @@ export default function AppRoutes() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
+        {/* Client Portal Routes (/portal) */}
         <Route element={<ProtectedRoute roles={['client']} />}>
           <Route path="/portal" element={<DashboardLayout nav={portalNav} basePath="/portal" area="Client workspace" />}>
             <Route index element={<PortalDashboard />} />
+            <Route path="dashboard" element={<PortalDashboard />} />
             <Route path="projects" element={<PortalProjects />} />
             <Route path="projects/:id" element={<PortalProjectDetail />} />
             <Route path="tasks" element={<PortalTasks />} />
@@ -102,9 +120,27 @@ export default function AppRoutes() {
           </Route>
         </Route>
 
+        {/* Client Portal Routes (/client) */}
+        <Route element={<ProtectedRoute roles={['client']} />}>
+          <Route path="/client" element={<DashboardLayout nav={clientNav} basePath="/client" area="Client workspace" />}>
+            <Route index element={<Navigate to="/client/dashboard" replace />} />
+            <Route path="dashboard" element={<PortalDashboard />} />
+            <Route path="projects" element={<PortalProjects />} />
+            <Route path="projects/:id" element={<PortalProjectDetail />} />
+            <Route path="tasks" element={<PortalTasks />} />
+            <Route path="feedback" element={<PortalFeedback />} />
+            <Route path="feedback/:id" element={<PortalFeedback />} />
+            <Route path="reviews" element={<PortalReviews />} />
+            <Route path="notifications" element={<PortalNotifications />} />
+            <Route path="profile" element={<Profile />} />
+          </Route>
+        </Route>
+
+        {/* Admin Studio Routes (/admin) */}
         <Route element={<ProtectedRoute roles={['admin', 'manager']} />}>
           <Route path="/admin" element={<DashboardLayout nav={adminNav} basePath="/admin" area="Studio admin" />}>
             <Route index element={<AdminDashboard />} />
+            <Route path="project-requests" element={<AdminProjectRequests />} />
             <Route path="clients" element={<AdminClients />} />
             <Route path="projects" element={<AdminProjects />} />
             <Route path="projects/:id" element={<AdminProjectDetail />} />

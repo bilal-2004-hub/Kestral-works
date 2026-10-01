@@ -100,3 +100,24 @@ export const fileApi = {
   },
   remove: (id) => api.delete(`/files/${id}`).then(unwrap),
 };
+
+// ─── Project Requests (Matching & Claiming) ──────────────────────────────────
+export const projectRequestApi = {
+  // Public: visitor submits a project request
+  submit: (payload) => api.post('/project-requests', payload).then(unwrap),
+  // Client: get available projects matching their professional field
+  getAvailable: () => api.get('/project-requests/available').then(unwrap),
+  // Client: atomically claim a project
+  claim: (id) => api.post(`/project-requests/${id}/claim`).then(unwrap),
+  // Admin: list all requests
+  adminList: (params) => api.get('/project-requests', { params }).then(unwrap),
+  // Admin: get single request
+  adminGet: (id) => api.get(`/project-requests/${id}`).then(unwrap),
+  // Admin: update status
+  adminUpdate: (id, payload) => api.patch(`/project-requests/${id}`, payload).then(unwrap),
+};
+
+// Professional fields for client registration / profile
+export const professionalFieldsApi = {
+  list: () => api.get('/professional-fields').then(unwrap),
+};

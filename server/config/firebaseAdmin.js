@@ -1,3 +1,4 @@
+require('./env');
 const { initializeApp, getApps, getApp, cert, applicationDefault } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');

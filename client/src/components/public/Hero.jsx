@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowDown, ShieldCheck, Activity } from 'lucide-react';
 import { COMPANY } from '../../utils/constants.js';
+import StartProjectModal from '../ui/StartProjectModal.jsx';
 
 // Animation variants for rock-solid Framer Motion execution
 const containerVariants = {
@@ -40,6 +42,8 @@ const fadeUpVariants = {
 };
 
 export default function Hero() {
+  const [modalOpen, setModalOpen] = useState(false);
+
   const scrollToWork = (e) => {
     e.preventDefault();
     document.querySelector('#work')?.scrollIntoView({ behavior: 'smooth' });
@@ -50,6 +54,7 @@ export default function Hero() {
       className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-marine-950 text-white pt-28 pb-14 lg:pt-36 lg:pb-16"
       aria-label="Hero"
     >
+      <StartProjectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
       {/* Ambient background lighting & grid */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <div className="absolute top-[-20%] left-[-10%] h-[600px] w-[600px] rounded-full bg-accent-primary/25 blur-[160px] animate-floatSlow" />
@@ -118,13 +123,14 @@ export default function Hero() {
 
             {/* CTAs */}
             <motion.div variants={fadeUpVariants} className="mt-9 flex flex-wrap items-center gap-4">
-              <Link
-                to="/contact"
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
                 className="inline-flex items-center gap-2.5 rounded-full bg-signal-500 px-8 py-4 text-xs font-bold uppercase tracking-wider text-marine-950 shadow-xl shadow-signal-500/25 hover:bg-signal-400 hover:scale-[1.02] active:scale-[0.98] transition-all"
               >
                 <span>Start a Project</span>
                 <ArrowRight size={16} />
-              </Link>
+              </button>
               <a
                 href="#work"
                 onClick={scrollToWork}

@@ -21,27 +21,72 @@ function calculateFromTasks(tasks) {
   return Math.round((completedWeight / totalWeight) * 100);
 }
 
+function calculateProgress(project, tasks) {
+  // If milestones exist, check milestone phase completion
+  if (project && Array.isArray(project.milestones) && project.milestones.length > 0) {
+    const sorted = [...project.milestones].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const completedCount = sorted.filter((m) => m.status === 'completed').length;
+
+    // Phase 1 completed (requirements submitted): 30%
+    if (completedCount === 1) {
+      return 30;
+    }
+    // Phase 2 completed: 70%
+    if (completedCount === 2) {
+      return 70;
+    }
+    // All milestones completed: 100%
+    if (completedCount === sorted.length) {
+      return 100;
+    }
+
+    const totalWeight = sorted.reduce((sum, m) => sum + (m.weight || 1), 0);
+    if (totalWeight > 0) {
+      const completedWeight = sorted
+        .filter((m) => m.status === 'completed')
+        .reduce((sum, m) => sum + (m.weight || 1), 0);
+      return Math.round((completedWeight / totalWeight) * 100);
+    }
+  }
+
+  if (tasks && tasks.length > 0) {
+    const totalWeight = tasks.reduce((sum, t) => sum + (t.weight || 1), 0);
+    if (totalWeight > 0) {
+      const completedWeight = tasks
+        .filter((t) => t.status === 'completed')
+        .reduce((sum, t) => sum + (t.weight || 1), 0);
+      return Math.round((completedWeight / totalWeight) * 100);
+    }
+  }
+
+  return 0;
+}
+
 /**
- * Recalculate project progress from its tasks, save to Firestore,
+ * Recalculate project progress from its tasks and milestones, save to Firestore,
  * log the change, and emit real-time events.
  *
  * @param {string} projectId
  * @param {string|null} changedBy - user ID who triggered the change
  * @param {string} reason - human-readable reason (e.g. "Task completed: Payment integration")
+ * @param {number|null} explicitProgress - optional explicit progress percentage (0-100)
  */
-async function recalculateAndSave(projectId, changedBy, reason = 'Task update') {
+async function recalculateAndSave(projectId, changedBy, reason = 'Task update', explicitProgress = null) {
   try {
     const project = await firestoreService.getById('projects', projectId);
     if (!project) return null;
 
-    // If manual mode, don't recalculate from tasks.
-    if (project.progressMode === 'manual') return project;
+    // If manual mode and no explicit override, don't recalculate
+    if (project.progressMode === 'manual' && explicitProgress === null) return project;
 
     const tasks = await firestoreService.find('tasks', (ref) =>
       ref.where('project', '==', projectId)
     );
 
-    const newProgress = calculateFromTasks(tasks);
+    const calculated = calculateProgress(project, tasks);
+    const newProgress = explicitProgress !== null
+      ? Math.min(100, Math.max(0, Math.round(explicitProgress)))
+      : calculated;
     const previousProgress = project.progress || 0;
 
     // No change — skip the write and emit.

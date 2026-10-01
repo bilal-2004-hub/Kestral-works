@@ -37,13 +37,13 @@ export default function ProgressBar({
   return (
     <div className={`w-full ${className}`}>
       {(label || showPercentage) && (
-        <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-mist-700">
+        <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-marine-100/70">
           <span>{label || 'Progress'}</span>
-          {showPercentage && <span className="font-semibold">{clamped}%</span>}
+          {showPercentage && <span className="font-semibold text-white">{clamped}%</span>}
         </div>
       )}
       <div
-        className={`${sizeClasses} w-full overflow-hidden rounded-full bg-mist-100 shadow-inner`}
+        className={`${sizeClasses} w-full overflow-hidden rounded-full bg-white/10 shadow-inner`}
         role="progressbar"
         aria-valuenow={clamped}
         aria-valuemin={0}

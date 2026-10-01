@@ -1,5 +1,6 @@
 const firestoreService = require('./firestore.service');
 const ApiError = require('../utils/ApiError');
+const { isStaff } = require('../middleware/auth');
 const { getPagination, buildMeta } = require('../utils/pagination');
 const { notifyStaff, notify } = require('./notification.service');
 
@@ -30,23 +31,31 @@ async function listPublic(filters = {}) {
 
 async function listAdmin(user, filters) {
   const { page, limit, skip } = getPagination(filters);
+  const isStaffUser = isStaff(user);
+  const userIds = [user?._id, user?.uid, user?.id].filter(Boolean);
 
-  const items = await firestoreService.find('reviews', (ref) => {
-    let q = ref;
-    if (filters.status) q = q.where('status', '==', filters.status);
-    return q;
-  });
+  const items = await firestoreService.find('reviews');
+  let filtered = items;
+  if (!isStaffUser && userIds.length > 0) {
+    filtered = filtered.filter((r) => {
+      const rClient = typeof r.client === 'object' ? (r.client?._id || r.client?.id) : r.client;
+      return userIds.includes(rClient) || userIds.includes(r.clientId);
+    });
+  }
+  if (filters.status) {
+    filtered = filtered.filter((r) => r.status === filters.status);
+  }
 
-  items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const total = items.length;
-  const paginated = items.slice(skip, skip + limit);
+  filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const total = filtered.length;
+  const paginated = filtered.slice(skip, skip + limit);
   const populated = await Promise.all(paginated.map(populateReview));
 
   return { items: populated, meta: buildMeta({ page, limit, total }) };
 }
 
 async function create(user, payload) {
-  const userId = user._id || user.uid;
+  const userId = user._id || user.uid || user.id;
 
   if (payload.project) {
     // Check if review already exists for this project

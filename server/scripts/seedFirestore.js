@@ -1,7 +1,9 @@
-require('dotenv').config();
+require('../config/env');
+const bcrypt = require('bcryptjs');
 const { auth, db, isConfigured, Timestamp } = require('../config/firebaseAdmin');
 const logger = require('../utils/logger');
 
+const bcryptRounds = 10;
 
 async function seedFirestore() {
   if (!isConfigured || !db) {
@@ -20,6 +22,7 @@ async function seedFirestore() {
       role: 'admin',
       position: 'Operations',
       company: 'Kestrel Studio',
+      password: process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!',
       isActive: true,
     },
     {
@@ -29,6 +32,7 @@ async function seedFirestore() {
       role: 'client',
       company: 'Northwind Foods',
       phone: '+92 300 1234567',
+      password: 'ClientPass123!',
       isActive: true,
     },
     {
@@ -37,21 +41,26 @@ async function seedFirestore() {
       email: 'daniel@lumen.io',
       role: 'client',
       company: 'Lumen Analytics',
+      password: 'ClientPass123!',
       isActive: true,
     },
   ];
 
   for (const u of usersToSeed) {
+    const rawPassword = u.password || 'ClientPass123!';
+    const passwordHash = await bcrypt.hash(rawPassword, bcryptRounds);
+
     // Optionally create in Firebase Auth if auth is available
     try {
       if (auth) {
         try {
-          await auth.getUserByEmail(u.email);
+          const existingUser = await auth.getUserByEmail(u.email);
+          await auth.updateUser(existingUser.uid, { password: rawPassword, displayName: u.name });
         } catch (notFound) {
           await auth.createUser({
             uid: u.uid,
             email: u.email,
-            password: 'ClientPass123!',
+            password: rawPassword,
             displayName: u.name,
           });
           // Set custom claims for role
@@ -63,10 +72,13 @@ async function seedFirestore() {
       logger.warn(`Could not sync Auth for ${u.email}: ${err.message}`);
     }
 
-    // Write user profile to Firestore
+    const { password: _p, ...userData } = u;
+
+    // Write user profile to Firestore (including passwordHash)
     await db.collection('users').doc(u.uid).set(
       {
-        ...u,
+        ...userData,
+        passwordHash,
         updatedAt: Timestamp.now(),
         createdAt: Timestamp.now(),
       },

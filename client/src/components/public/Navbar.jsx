@@ -4,6 +4,7 @@ import { Menu, X, ArrowUpRight, Sparkles, UserCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import Button from '../ui/Button.jsx';
 import { COMPANY } from '../../utils/constants.js';
+import StartProjectModal from '../ui/StartProjectModal.jsx';
 
 const NAV_LINKS = [
   { href: '/services', label: 'Services', hash: '#services' },
@@ -16,6 +17,7 @@ const NAV_LINKS = [
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { isAuthenticated, isStaff, user } = useAuth();
   const location = useLocation();
@@ -110,13 +112,14 @@ export default function Navbar() {
               >
                 Client Sign In
               </Link>
-              <Link
-                to="/contact"
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
                 className="inline-flex items-center gap-2 rounded-full bg-signal-500 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-marine-950 shadow-lg shadow-signal-500/20 hover:bg-signal-400 hover:scale-[1.02] active:scale-[0.98] transition-all"
               >
                 <span>Start a Project</span>
                 <ArrowUpRight size={14} />
-              </Link>
+              </button>
             </>
           )}
         </div>
@@ -178,14 +181,14 @@ export default function Navbar() {
                 >
                   Client Sign In
                 </Link>
-                <Link
-                  to="/contact"
-                  onClick={() => setOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); setModalOpen(true); }}
                   className="flex items-center justify-center gap-2 rounded-xl bg-signal-500 p-3.5 text-xs font-bold uppercase tracking-wider text-marine-950 shadow-lg shadow-signal-500/20"
                 >
                   <span>Start a Project</span>
                   <ArrowUpRight size={14} />
-                </Link>
+                </button>
               </div>
             )}
             <p className="text-center text-xs text-marine-100/50">
@@ -194,6 +197,8 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+
+      <StartProjectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
     </header>
   );
 }

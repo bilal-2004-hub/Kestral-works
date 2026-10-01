@@ -63,8 +63,8 @@ export default function AdminClients() {
       <span className="flex items-center gap-2">
         <Avatar name={c.name} src={c.avatar} size={30} />
         <span>
-          <Link to={`/admin/clients`} className="font-medium text-marine-900">{c.name}</Link>
-          <span className="block text-xs text-mist-600">{c.email}</span>
+          <Link to={`/admin/clients`} className="font-semibold text-white hover:text-signal-400">{c.name}</Link>
+          <span className="block text-xs text-marine-100/60 font-mono">{c.email}</span>
         </span>
       </span>
     ) },

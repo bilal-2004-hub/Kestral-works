@@ -43,48 +43,51 @@ async function populateFeedback(item) {
 
 async function list(user, filters) {
   const { page, limit, skip } = getPagination(filters);
-  const userId = user._id || user.uid;
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
 
-  const rawItems = await firestoreService.find('feedback', (ref) => {
-    let q = ref;
-    if (!isStaff(user)) {
-      q = q.where('client', '==', userId);
-    }
-    if (filters.status) {
-      q = q.where('status', '==', filters.status);
-    }
-    if (filters.project) {
-      q = q.where('project', '==', filters.project);
-    }
-    return q;
-  });
+  const rawItems = await firestoreService.find('feedback');
+  let filtered = rawItems;
+  if (!isStaff(user)) {
+    filtered = filtered.filter((f) => {
+      const fClient = typeof f.client === 'object' ? (f.client?._id || f.client?.id) : f.client;
+      return userIds.includes(fClient) || userIds.includes(f.userId);
+    });
+  }
+  if (filters.status) {
+    filtered = filtered.filter((f) => f.status === filters.status);
+  }
+  if (filters.project) {
+    filtered = filtered.filter((f) => {
+      const pId = typeof f.project === 'object' ? (f.project?._id || f.project?.id) : f.project;
+      return pId === filters.project;
+    });
+  }
 
-  rawItems.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-  const total = rawItems.length;
-  const paginated = rawItems.slice(skip, skip + limit);
+  const total = filtered.length;
+  const paginated = filtered.slice(skip, skip + limit);
   const populated = await Promise.all(paginated.map(populateFeedback));
 
   return { items: populated, meta: buildMeta({ page, limit, total }) };
 }
 
 async function getById(user, id) {
-  const userId = user._id || user.uid;
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
   const raw = await firestoreService.getById('feedback', id);
 
   if (raw) {
-    const clientId = typeof raw.client === 'object' ? raw.client._id : raw.client;
-    if (isStaff(user) || clientId === userId) {
+    const clientId = typeof raw.client === 'object' ? (raw.client?._id || raw.client?.id) : raw.client;
+    if (isStaff(user) || userIds.includes(clientId) || userIds.includes(raw.userId)) {
       return populateFeedback(raw);
     }
   }
-
   throw ApiError.notFound('Feedback not found');
 }
 
 async function create(user, payload) {
   const project = await assertProjectAccess(user, payload.project);
-  const userId = user._id || user.uid;
+  const userId = user._id || user.uid || user.id;
 
   const data = {
     ...payload,
@@ -109,7 +112,7 @@ async function create(user, payload) {
 
 async function reply(user, id, message) {
   const feedback = await getById(user, id);
-  const userId = user._id || user.uid;
+  const userId = user._id || user.uid || user.id;
 
   const newReply = {
     _id: 'rep_' + Date.now(),

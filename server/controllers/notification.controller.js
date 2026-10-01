@@ -6,29 +6,32 @@ const ApiError = require('../utils/ApiError');
 
 exports.list = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
-  const userId = req.user._id || req.user.uid;
+  const userIds = [req.user._id, req.user.uid, req.user.id].filter(Boolean);
 
-  const allItems = await firestoreService.find('notifications', (ref) => {
-    let q = ref.where('user', '==', userId);
-    if (req.query.unread === 'true') q = q.where('isRead', '==', false);
-    return q;
+  const allItems = await firestoreService.find('notifications');
+  const userNotifs = allItems.filter((n) => {
+    const nUser = n.user || n.userId;
+    if (!userIds.includes(nUser)) return false;
+    if (req.query.unread === 'true' && n.isRead !== false) return false;
+    return true;
   });
 
   // Sort newest first
-  allItems.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  userNotifs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-  const total = allItems.length;
-  const unread = allItems.filter((n) => !n.isRead).length;
-  const items = allItems.slice(skip, skip + limit);
+  const total = userNotifs.length;
+  const unread = userNotifs.filter((n) => !n.isRead).length;
+  const items = userNotifs.slice(skip, skip + limit);
 
   success(res, { data: items, meta: { ...buildMeta({ page, limit, total }), unread } });
 });
 
 exports.markRead = asyncHandler(async (req, res) => {
-  const userId = req.user._id || req.user.uid;
+  const userIds = [req.user._id, req.user.uid, req.user.id].filter(Boolean);
   const notification = await firestoreService.getById('notifications', req.params.id);
 
-  if (!notification || notification.user !== userId) {
+  const nUser = notification ? (notification.user || notification.userId) : null;
+  if (!notification || !userIds.includes(nUser)) {
     throw ApiError.notFound('Notification not found');
   }
 
@@ -41,11 +44,13 @@ exports.markRead = asyncHandler(async (req, res) => {
 });
 
 exports.markAllRead = asyncHandler(async (req, res) => {
-  const userId = req.user._id || req.user.uid;
+  const userIds = [req.user._id, req.user.uid, req.user.id].filter(Boolean);
 
-  const unreadItems = await firestoreService.find('notifications', (ref) =>
-    ref.where('user', '==', userId).where('isRead', '==', false)
-  );
+  const allItems = await firestoreService.find('notifications');
+  const unreadItems = allItems.filter((n) => {
+    const nUser = n.user || n.userId;
+    return userIds.includes(nUser) && !n.isRead;
+  });
 
   // Firestore does not support batch updates via a single query; update each doc.
   const now = new Date();

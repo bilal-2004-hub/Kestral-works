@@ -1,11 +1,11 @@
 const router = require('express').Router();
 const ctrl = require('../controllers/contact.controller');
 const validate = require('../middleware/validate');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, optionalAuth, requireRole } = require('../middleware/auth');
 const { contactLimiter } = require('../middleware/rateLimit');
 const { contactRules } = require('../validators/interaction.validator');
 
-router.post('/', contactLimiter, validate(contactRules), ctrl.create);
+router.post('/', optionalAuth, contactLimiter, validate(contactRules), ctrl.create);
 
 router.use(requireAuth, requireRole('admin', 'manager'));
 router.get('/', ctrl.list);

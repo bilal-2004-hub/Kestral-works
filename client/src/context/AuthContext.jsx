@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { authApi } from '../services/endpoints.js';
 import { setAccessToken, setSessionLostHandler } from '../services/api.js';
 import {
@@ -15,21 +15,34 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | authenticated | anonymous
+  const isRegisteringRef = useRef(false);
   const [sessionPassword, setSessionPassword] = useState(() => {
     try {
-      return sessionStorage.getItem('session_client_pass') || '';
+      return (
+        sessionStorage.getItem('session_client_pass') ||
+        localStorage.getItem('client_portal_last_pass') ||
+        ''
+      );
     } catch {
       return '';
     }
   });
 
-  const updateSessionPassword = useCallback((newPass) => {
+  const updateSessionPassword = useCallback((newPass, email) => {
     setSessionPassword(newPass || '');
     try {
       if (newPass) {
         sessionStorage.setItem('session_client_pass', newPass);
+        localStorage.setItem('client_portal_last_pass', newPass);
+        if (email) {
+          localStorage.setItem(`client_portal_pass_${email.toLowerCase().trim()}`, newPass);
+        }
       } else {
         sessionStorage.removeItem('session_client_pass');
+        localStorage.removeItem('client_portal_last_pass');
+        if (email) {
+          localStorage.removeItem(`client_portal_pass_${email.toLowerCase().trim()}`);
+        }
       }
     } catch {}
   }, []);
@@ -52,15 +65,24 @@ export function AuthProvider({ children }) {
 
     // Listen to Firebase Auth state changes
     const unsubscribe = onAuthChange(async (firebaseUser) => {
+      if (isRegisteringRef.current) return;
       if (firebaseUser) {
         try {
           const token = await firebaseUser.getIdToken();
           setAccessToken(token);
           // Fetch synced profile from backend
           const res = await authApi.me();
-          if (res?.data) {
-            setUser(res.data);
+          // /auth/me returns { data: { user: {...} } } so unwrap the nested user
+          const profile = res?.data?.user || res?.data || null;
+          if (profile) {
+            setUser(profile);
             setStatus('authenticated');
+            if (profile.email) {
+              try {
+                const saved = localStorage.getItem(`client_portal_pass_${profile.email.toLowerCase().trim()}`);
+                if (saved) setSessionPassword(saved);
+              } catch {}
+            }
             return;
           }
         } catch (err) {
@@ -74,6 +96,12 @@ export function AuthProvider({ children }) {
             role: firebaseUser.email?.includes('admin') ? 'admin' : 'client',
           });
           setStatus('authenticated');
+          if (firebaseUser.email) {
+            try {
+              const saved = localStorage.getItem(`client_portal_pass_${firebaseUser.email.toLowerCase().trim()}`);
+              if (saved) setSessionPassword(saved);
+            } catch {}
+          }
           return;
         }
       }
@@ -82,6 +110,12 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await authApi.refresh();
         applySession(data);
+        if (data?.user?.email) {
+          try {
+            const saved = localStorage.getItem(`client_portal_pass_${data.user.email.toLowerCase().trim()}`);
+            if (saved) setSessionPassword(saved);
+          } catch {}
+        }
       } catch {
         clearSession();
       }
@@ -105,7 +139,8 @@ export function AuthProvider({ children }) {
           const token = await firebaseUser.getIdToken();
           setAccessToken(token);
           const res = await authApi.me();
-          const nextUser = res?.data || {
+          // /auth/me returns { data: { user: {...} } } so unwrap the nested user
+          const nextUser = res?.data?.user || res?.data || {
             _id: firebaseUser.uid,
             id: firebaseUser.uid,
             uid: firebaseUser.uid,
@@ -114,43 +149,62 @@ export function AuthProvider({ children }) {
             role: firebaseUser.email?.includes('admin') ? 'admin' : 'client',
           };
           applySession({ user: nextUser, accessToken: token });
-          updateSessionPassword(payload.password);
+          updateSessionPassword(payload.password, payload.email);
           authApi.recordLogin({ portal: 'client_portal', loginMethod: 'firebase_auth' }).catch(() => {});
           return nextUser;
         } catch (firebaseErr) {
           // 2. Fallback to backend API login
           const { data } = await authApi.login(payload);
           applySession(data);
-          updateSessionPassword(payload.password);
+          updateSessionPassword(payload.password, payload.email);
           return data.user;
         }
       },
       register: async (payload) => {
+        isRegisteringRef.current = true;
         try {
-          const firebaseUser = await registerWithEmail(
-            payload.email,
-            payload.password,
-            payload.name
-          );
-          const token = await firebaseUser.getIdToken();
-          setAccessToken(token);
-          const res = await authApi.register(payload);
-          const nextUser = res?.data?.user || res?.data || {
-            _id: firebaseUser.uid,
-            id: firebaseUser.uid,
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: payload.name,
-            role: 'client',
-          };
-          applySession({ user: nextUser, accessToken: token });
-          updateSessionPassword(payload.password);
-          return nextUser;
-        } catch (firebaseErr) {
-          const { data } = await authApi.register(payload);
-          applySession(data);
-          updateSessionPassword(payload.password);
-          return data.user;
+          let firebaseUser = null;
+          try {
+            firebaseUser = await registerWithEmail(
+              payload.email,
+              payload.password,
+              payload.name
+            );
+          } catch (fbErr) {
+            // If Firebase client-side creation fails (e.g. email exists or offline), let backend handle or throw
+          }
+
+          if (firebaseUser) {
+            try {
+              const token = await firebaseUser.getIdToken();
+              setAccessToken(token);
+            } catch {}
+          }
+
+          await authApi.register(payload);
+
+          // Account created successfully. Sign out so user is redirected to login page to sign in
+          try {
+            await logoutUser();
+          } catch {}
+          try {
+            await authApi.logout();
+          } catch {}
+          clearSession();
+          return { success: true };
+        } catch (err) {
+          try {
+            await logoutUser();
+          } catch {}
+          try {
+            await authApi.logout();
+          } catch {}
+          clearSession();
+          throw err;
+        } finally {
+          setTimeout(() => {
+            isRegisteringRef.current = false;
+          }, 500);
         }
       },
       resetPassword: async (payload) => {

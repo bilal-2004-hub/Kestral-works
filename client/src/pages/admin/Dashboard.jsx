@@ -39,11 +39,11 @@ export default function AdminDashboard() {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusData} margin={{ left: -20, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#DFE6E4" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={54} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip cursor={{ fill: '#EEF2F1' }} />
-                <Bar dataKey="count" fill="#0F5261" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }} interval={0} angle={-18} textAnchor="end" height={54} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#07181F', borderColor: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: '0.75rem' }} />
+                <Bar dataKey="count" fill="#38BDF8" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -53,11 +53,11 @@ export default function AdminDashboard() {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={projectsPerMonth} margin={{ left: -20, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#DFE6E4" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip cursor={{ fill: '#EEF2F1' }} />
-                <Bar dataKey="count" fill="#EBB61F" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#07181F', borderColor: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: '0.75rem' }} />
+                <Bar dataKey="count" fill="#FCD34D" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -66,14 +66,14 @@ export default function AdminDashboard() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <Card title="Recently updated projects" padded={false}>
-          <ul className="divide-y divide-mist-100">
+          <ul className="divide-y divide-white/10">
             {recentProjects.map((project) => (
               <li key={project._id}>
-                <Link to={`/admin/projects/${project._id}`} className="block px-5 py-4 hover:bg-mist-50">
+                <Link to={`/admin/projects/${project._id}`} className="block px-5 py-4 hover:bg-white/[0.03] transition-colors">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-marine-900">{project.name}</p>
-                      <p className="mt-0.5 text-xs text-mist-600">
+                      <p className="truncate font-semibold text-white">{project.name}</p>
+                      <p className="mt-0.5 text-xs text-marine-100/60 font-mono">
                         {project.client?.company || project.client?.name} · updated {timeAgo(project.updatedAt)}
                       </p>
                     </div>
@@ -89,22 +89,22 @@ export default function AdminDashboard() {
         <Card title="Needs attention">
           <ul className="space-y-3 text-sm">
             <li className="flex items-center justify-between">
-              <Link to="/admin/feedback" className="flex items-center gap-2 text-mist-600 hover:text-marine-900">
-                <MessageSquare size={16} /> Feedback threads open
+              <Link to="/admin/feedback" className="flex items-center gap-2 text-marine-100/70 hover:text-white transition-colors">
+                <MessageSquare size={16} className="text-signal-400" /> Feedback threads open
               </Link>
-              <span className="font-medium">{totals.openFeedback}</span>
+              <span className="font-semibold text-white font-mono">{totals.openFeedback}</span>
             </li>
             <li className="flex items-center justify-between">
-              <Link to="/admin/reviews" className="flex items-center gap-2 text-mist-600 hover:text-marine-900">
-                <Star size={16} /> Reviews awaiting moderation
+              <Link to="/admin/reviews" className="flex items-center gap-2 text-marine-100/70 hover:text-white transition-colors">
+                <Star size={16} className="text-signal-400" /> Reviews awaiting moderation
               </Link>
-              <span className="font-medium">{totals.pendingReviews}</span>
+              <span className="font-semibold text-white font-mono">{totals.pendingReviews}</span>
             </li>
             <li className="flex items-center justify-between">
-              <Link to="/admin/messages" className="flex items-center gap-2 text-mist-600 hover:text-marine-900">
-                <Inbox size={16} /> Unread enquiries
+              <Link to="/admin/messages" className="flex items-center gap-2 text-marine-100/70 hover:text-white transition-colors">
+                <Inbox size={16} className="text-signal-400" /> Unread enquiries
               </Link>
-              <span className="font-medium">{totals.newMessages}</span>
+              <span className="font-semibold text-white font-mono">{totals.newMessages}</span>
             </li>
           </ul>
         </Card>

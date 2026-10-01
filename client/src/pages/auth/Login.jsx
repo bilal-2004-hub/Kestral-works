@@ -10,15 +10,22 @@ export default function Login() {
   const { login, status, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+  });
   const [formError, setFormError] = useState('');
+  const [successMessage, setSuccessMessage] = useState(location.state?.message || '');
   const { execute, pending, fieldErrors } = useAction(login);
 
   if (status === 'authenticated') {
     return <Navigate to={user.role === 'client' ? '/portal' : '/admin'} replace />;
   }
 
-  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const update = (key) => (e) => {
+    if (successMessage) setSuccessMessage('');
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -39,6 +46,11 @@ export default function Login() {
       footer={<>No account yet? <Link to="/register" className="font-medium text-marine-700 hover:underline">Create one</Link></>}
     >
       <form onSubmit={onSubmit} noValidate autoComplete="off" className="space-y-4">
+        {successMessage && (
+          <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {successMessage}
+          </p>
+        )}
         {formError && (
           <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-state-bad">{formError}</p>
         )}

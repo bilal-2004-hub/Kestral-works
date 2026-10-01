@@ -13,6 +13,7 @@ exports.registerRules = [
   password(),
   body('company').optional().trim().isLength({ max: 120 }),
   body('phone').optional().trim().isLength({ max: 32 }),
+  body('professionalField').optional().trim().isLength({ max: 100 }),
 ];
 
 exports.loginRules = [

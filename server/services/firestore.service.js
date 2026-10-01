@@ -42,6 +42,17 @@ async function getById(collection, id) {
   return formatSnapshot(snapshot);
 }
 
+function toTimestamp(val, fallback = null) {
+  if (!val) return fallback || Timestamp.now();
+  if (val instanceof Timestamp) return val;
+  if (val instanceof Date && !isNaN(val.getTime())) return Timestamp.fromDate(val);
+  if (typeof val?.toDate === 'function') return Timestamp.fromDate(val.toDate());
+  if (typeof val?._seconds === 'number') return new Timestamp(val._seconds, val._nanoseconds || 0);
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) return Timestamp.fromDate(d);
+  return fallback || Timestamp.now();
+}
+
 /**
  * Creates a new document in a collection.
  */
@@ -52,7 +63,7 @@ async function create(collection, data, customId = null) {
   delete cleanData.id;
 
   const now = Timestamp.now();
-  cleanData.createdAt = cleanData.createdAt ? Timestamp.fromDate(new Date(cleanData.createdAt)) : now;
+  cleanData.createdAt = toTimestamp(cleanData.createdAt, now);
   cleanData.updatedAt = now;
 
   let docRef;

@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const { clientUrl } = require('../config/env');
+const { auth: firebaseAuth, isConfigured } = require('../config/firebaseAdmin');
 const { verifyAccessToken } = require('../utils/token');
 const firestoreService = require('./firestore.service');
 const logger = require('../utils/logger');
@@ -9,6 +10,12 @@ let io = null;
 /**
  * Initialize Socket.IO on the HTTP server.
  * Sets up authentication middleware and connection handling.
+ *
+ * Auth strategy mirrors the REST API middleware (server/middleware/auth.js):
+ *   1. Try Firebase ID Token (primary — used by the React frontend via getIdToken())
+ *   2. Fall back to custom JWT (legacy / non-Firebase sessions)
+ * This ensures the same token the AuthContext sends as Bearer also works for
+ * Socket.IO, so clients do not need separate token management.
  */
 function init(httpServer) {
   io = new Server(httpServer, {
@@ -26,17 +33,54 @@ function init(httpServer) {
       const token = socket.handshake.auth?.token;
       if (!token) return next(new Error('Authentication required'));
 
-      const payload = verifyAccessToken(token);
-      const user = await firestoreService.getById('users', payload.sub);
-      if (!user || user.isActive === false) return next(new Error('Account inactive'));
+      let userId = null;
+      let userDoc = null;
+
+      // 1. Try Firebase ID Token (matches REST API primary path)
+      if (isConfigured && firebaseAuth) {
+        try {
+          const decoded = await firebaseAuth.verifyIdToken(token);
+          userId = decoded.uid;
+          userDoc = await firestoreService.getById('users', userId);
+
+          // Auto-provision if first socket connection before REST API call
+          if (!userDoc) {
+            userDoc = {
+              uid: decoded.uid,
+              email: decoded.email || '',
+              name: decoded.name || (decoded.email || '').split('@')[0] || 'User',
+              role: 'client',
+              isActive: true,
+            };
+          }
+        } catch (firebaseErr) {
+          if (firebaseErr.code === 'auth/id-token-expired') {
+            return next(new Error('Session expired'));
+          }
+          // Not a Firebase token — fall through to JWT
+        }
+      }
+
+      // 2. Fallback to custom JWT
+      if (!userId) {
+        const payload = verifyAccessToken(token);
+        userId = payload.sub;
+        userDoc = await firestoreService.getById('users', userId);
+      }
+
+      if (!userDoc || userDoc.isActive === false) {
+        return next(new Error('Account inactive'));
+      }
 
       socket.user = {
-        _id: user._id || user.uid || payload.sub,
-        id: user._id || user.uid || payload.sub,
-        ...user,
+        _id: userId,
+        id: userId,
+        uid: userId,
+        ...userDoc,
       };
       next();
     } catch (err) {
+      logger.warn('Socket auth failed:', err.message);
       next(new Error('Invalid session'));
     }
   });

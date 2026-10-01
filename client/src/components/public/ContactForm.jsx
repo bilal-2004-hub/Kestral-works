@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Phone, MapPin, CheckCircle2, ArrowRight, Clock, ShieldCheck, Sparkles, Send } from 'lucide-react';
+import { Mail, Phone, MapPin, CheckCircle2, ArrowRight, Clock, ShieldCheck, Sparkles, Send, FolderKanban, ListChecks } from 'lucide-react';
 import { Input, TextArea, Select } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
 import { contactApi } from '../../services/endpoints.js';
 import { useAction } from '../../hooks/useApi.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { COMPANY, SERVICES } from '../../utils/constants.js';
 
 const BUDGET_RANGES = [
@@ -36,10 +38,29 @@ const emptyForm = {
 };
 
 export default function ContactForm({ isStandalone = false }) {
-  const [form, setForm] = useState(emptyForm);
+  const { user } = useAuth();
+  const [form, setForm] = useState(() => ({
+    ...emptyForm,
+    name: user?.name || '',
+    email: user?.email || '',
+    company: user?.company || '',
+    phone: user?.phone || '',
+  }));
   const [sent, setSent] = useState(false);
   const { execute, pending, fieldErrors } = useAction(contactApi.send);
   const toast = useToast();
+
+  useEffect(() => {
+    if (user) {
+      setForm((f) => ({
+        ...f,
+        name: f.name || user.name || '',
+        email: f.email || user.email || '',
+        company: f.company || user.company || '',
+        phone: f.phone || user.phone || '',
+      }));
+    }
+  }, [user]);
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const setDirect = (key, val) => setForm((f) => ({ ...f, [key]: val }));
@@ -154,16 +175,41 @@ export default function ContactForm({ isStandalone = false }) {
                     Your brief has been delivered.
                   </h3>
                   <p className="text-sm sm:text-base leading-relaxed text-marine-100/75">
-                    Our technical leads are reviewing your project requirements and will prepare initial architectural insights along with available consultation slots.
+                    Our technical architects are reviewing your specifications. A dedicated workspace, discovery milestones, and initial onboarding tasks have been generated in your Client Portal.
                   </p>
-                  <div className="mt-6 pt-6 border-t border-white/10 w-full flex items-center justify-between">
+
+                  <div className="mt-4 w-full rounded-2xl border border-signal-500/20 bg-signal-500/5 p-4 text-xs font-mono text-marine-100/80">
+                    <div className="flex items-center gap-2 font-bold text-signal-400 mb-1">
+                      <ListChecks size={15} /> Initial Tasks Generated in Client Portal:
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-marine-100/70">
+                      <li>Review Project Briefing & Technical Specifications (In Progress)</li>
+                      <li>Exploratory Consultation & Discovery Alignment (Pending)</li>
+                    </ul>
+                  </div>
+
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <Link
+                      to={user ? "/portal/projects" : "/login"}
+                      className="inline-flex items-center gap-2 rounded-xl bg-signal-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-marine-950 shadow-lg shadow-signal-500/25 hover:bg-signal-400 transition-all"
+                    >
+                      <FolderKanban size={15} />
+                      {user ? 'View in Client Workspace' : 'Sign in to Client Workspace'}
+                    </Link>
+
                     <button
                       type="button"
                       onClick={() => setSent(false)}
-                      className="rounded-full bg-white/10 border border-white/20 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/20 transition-all"
+                      className="rounded-xl bg-white/10 border border-white/20 px-5 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/20 transition-all"
                     >
                       Send Another Inquiry
                     </button>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-white/10 w-full flex items-center justify-between">
+                    <span className="font-mono text-xs text-marine-100/50">
+                      Mutual NDA Active · SLA 4h Response
+                    </span>
                     <span className="font-mono text-xs text-marine-100/50">
                       ID: #{Date.now().toString().slice(-6)}
                     </span>

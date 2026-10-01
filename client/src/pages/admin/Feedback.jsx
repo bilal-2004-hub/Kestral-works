@@ -74,12 +74,12 @@ export default function AdminFeedback() {
             <Card key={item._id} padded={false}>
               <button
                 onClick={() => setOpenId(expanded ? null : item._id)}
-                className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left hover:bg-mist-50"
+                className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors"
                 aria-expanded={expanded}
               >
                 <div className="min-w-0">
-                  <p className="font-medium text-marine-900">{item.subject}</p>
-                  <p className="mt-0.5 text-xs text-mist-600">
+                  <p className="font-semibold text-white">{item.subject}</p>
+                  <p className="mt-0.5 text-xs text-marine-100/60 font-mono">
                     {item.client?.name} · {item.project?.name} · {timeAgo(item.createdAt)}
                   </p>
                 </div>
@@ -90,26 +90,26 @@ export default function AdminFeedback() {
               </button>
 
               {expanded && (
-                <div className="border-t border-mist-200 px-5 py-4">
-                  <p className="whitespace-pre-wrap text-sm text-mist-600">{item.message}</p>
-                  <Link to={`/admin/projects/${item.project?._id}`} className="mt-2 inline-block text-xs text-marine-700 hover:underline">
+                <div className="border-t border-white/10 px-5 py-4">
+                  <p className="whitespace-pre-wrap text-sm text-marine-100/80">{item.message}</p>
+                  <Link to={`/admin/projects/${item.project?._id || item.project?.id}`} className="mt-2 inline-block text-xs font-medium text-signal-400 hover:underline">
                     Open the project
                   </Link>
 
-                  <ul className="mt-4 space-y-4 border-t border-mist-100 pt-4">
+                  <ul className="mt-4 space-y-4 border-t border-white/10 pt-4">
                     {item.replies?.map((r, i) => (
                       <li key={i} className="flex gap-3">
                         <Avatar name={r.author?.name} src={r.author?.avatar} size={32} />
                         <div>
                           <p className="text-sm">
-                            <span className="font-medium text-marine-900">{r.author?.name}</span>
-                            <span className="ml-2 text-xs text-mist-400">{formatDateTime(r.createdAt)}</span>
+                            <span className="font-semibold text-white">{r.author?.name}</span>
+                            <span className="ml-2 text-xs text-marine-100/40 font-mono">{formatDateTime(r.createdAt)}</span>
                           </p>
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-mist-600">{r.message}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-marine-100/80">{r.message}</p>
                         </div>
                       </li>
                     ))}
-                    {!item.replies?.length && <li className="text-sm text-mist-600">No reply yet.</li>}
+                    {!item.replies?.length && <li className="text-sm text-marine-100/50">No reply yet.</li>}
                   </ul>
 
                   <div className="mt-4 flex items-end gap-2">

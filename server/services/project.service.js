@@ -45,9 +45,14 @@ async function populateProject(project) {
     p.team = [];
   }
 
-  // Populate files
+  // Populate files (both from project.files and files collection)
+  const projectFiles = await firestoreService.find('files', (ref) =>
+    ref.where('project', '==', p._id || p.id)
+  ).catch(() => []);
+
+  let existingFiles = [];
   if (Array.isArray(p.files)) {
-    p.files = await Promise.all(
+    existingFiles = await Promise.all(
       p.files.map(async (fileRef) => {
         if (typeof fileRef === 'string') {
           return firestoreService.getById('files', fileRef);
@@ -55,39 +60,65 @@ async function populateProject(project) {
         return fileRef;
       })
     ).then((list) => list.filter(Boolean));
-  } else {
-    p.files = [];
   }
+  const fileMap = new Map();
+  for (const f of [...existingFiles, ...projectFiles]) {
+    if (f && (f._id || f.id)) {
+      fileMap.set(f._id || f.id, f);
+    }
+  }
+  p.files = Array.from(fileMap.values());
 
   p.milestones = p.milestones || [];
+
+  // Compute current milestone
+  const inProgressMilestone = p.milestones.find((m) => m.status === 'in_progress');
+  const pendingMilestone = p.milestones.find((m) => m.status === 'pending');
+  p.currentMilestone = inProgressMilestone || pendingMilestone || p.milestones[p.milestones.length - 1] || null;
+
+  // Compute task statistics for project
+  try {
+    const rawTasks = await firestoreService.find('tasks', (ref) => ref.where('project', '==', p._id || p.id));
+    const visibleTasks = rawTasks.filter((t) => t.visibleToClient !== false);
+    const completed = visibleTasks.filter((t) => t.status === 'completed').length;
+    p.taskStats = {
+      total: visibleTasks.length,
+      completed,
+      pending: visibleTasks.filter((t) => ['pending', 'in_progress', 'review'].includes(t.status)).length,
+    };
+  } catch {
+    p.taskStats = { total: 0, completed: 0, pending: 0 };
+  }
+
   return p;
 }
 
 function scopeAccess(user, id) {
-  return isStaff(user) ? { _id: id } : { _id: id, client: user._id };
+  const userId = user._id || user.uid || user.id;
+  return isStaff(user) ? { _id: id } : { _id: id, client: userId };
 }
 
 async function list(user, filters) {
   const { page, limit, skip } = getPagination(filters);
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
 
-  const rawItems = await firestoreService.find('projects', (ref) => {
-    let q = ref;
-    const isArchivedFilter = filters.includeArchived === 'true';
-    if (!isArchivedFilter) {
-      q = q.where('isArchived', '==', false);
-    }
-    if (!isStaff(user)) {
-      const userId = user._id || user.uid;
-      q = q.where('client', '==', userId);
-    }
-    if (filters.status) {
-      q = q.where('status', '==', filters.status);
-    }
-    return q;
-  });
+  const allProjects = await firestoreService.find('projects');
+  let rawItems = [];
+  if (!isStaff(user)) {
+    rawItems = allProjects.filter((p) => {
+      const pClient = typeof p.client === 'object' ? (p.client?._id || p.client?.id) : p.client;
+      return userIds.some((id) => id === pClient || id === p.clientId || id === p.claimedBy);
+    });
+  } else {
+    rawItems = allProjects;
+  }
 
-  // Client-side search or sorting for memory safety
-  let filtered = rawItems;
+  if (filters.status) {
+    rawItems = rawItems.filter((p) => p.status === filters.status);
+  }
+
+  const isArchivedFilter = filters.includeArchived === 'true';
+  let filtered = isArchivedFilter ? rawItems : rawItems.filter((p) => p.isArchived !== true);
   if (filters.search) {
     const term = filters.search.toLowerCase();
     filtered = filtered.filter(
@@ -108,9 +139,10 @@ async function getById(user, id) {
   const raw = await firestoreService.getById('projects', id);
   if (!raw) throw ApiError.notFound('Project not found');
 
-  const userId = user._id || user.uid;
-  const clientId = typeof raw.client === 'object' ? raw.client?._id : raw.client;
-  if (!isStaff(user) && clientId !== userId) throw ApiError.notFound('Project not found');
+  const userIds = [user._id, user.uid, user.id].filter(Boolean);
+  const clientId = typeof raw.client === 'object' ? (raw.client?._id || raw.client?.id) : raw.client;
+  const isOwner = userIds.some((uid) => uid === clientId || uid === raw.clientId || uid === raw.claimedBy);
+  if (!isStaff(user) && !isOwner) throw ApiError.notFound('Project not found');
 
   const project = await populateProject(raw);
 

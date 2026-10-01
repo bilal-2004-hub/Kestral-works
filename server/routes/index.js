@@ -1,8 +1,9 @@
 const router = require('express').Router();
-const { SERVICES } = require('../config/constants');
+const { SERVICES, PROFESSIONAL_FIELDS } = require('../config/constants');
 
 router.get('/health', (_req, res) => res.json({ success: true, message: 'API is running', uptime: process.uptime() }));
 router.get('/services', (_req, res) => res.json({ success: true, data: SERVICES }));
+router.get('/professional-fields', (_req, res) => res.json({ success: true, data: PROFESSIONAL_FIELDS }));
 
 router.use('/auth', require('./auth.routes'));
 router.use('/clients', require('./client.routes'));
@@ -16,5 +17,6 @@ router.use('/contact', require('./contact.routes'));
 router.use('/dashboard', require('./dashboard.routes'));
 router.use('/files', require('./file.routes'));
 router.use('/progress', require('./progress.routes'));
+router.use('/project-requests', require('./projectRequest.routes'));
 
 module.exports = router;

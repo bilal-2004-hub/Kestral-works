@@ -5,7 +5,12 @@ const multer = require('multer');
 const ApiError = require('../utils/ApiError');
 const { maxUploadBytes } = require('../config/env');
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+// Vercel's serverless functions only allow writes inside /tmp.
+// In development (or any other host) we keep the local uploads/ folder.
+const IS_VERCEL = process.env.VERCEL === '1';
+const UPLOAD_DIR = IS_VERCEL
+  ? '/tmp/uploads'
+  : path.join(__dirname, '..', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED = new Set([
